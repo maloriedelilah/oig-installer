@@ -408,7 +408,6 @@ REOF
 	}
 }
 CEOF
-    fi
 
     # Start/restart Caddy
     if [ "$HAS_SYSTEMD" = "1" ]; then
