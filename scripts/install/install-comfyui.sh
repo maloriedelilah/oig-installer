@@ -82,17 +82,30 @@ download() {
     local label="$3"
     local auth="$4"
 
-    if [ -f "$dest" ]; then
+    # Skip if file exists and is non-empty
+    if [ -f "$dest" ] && [ -s "$dest" ]; then
         echo "  [skip] $label (already exists)"
         return
     fi
 
+    # Clean up any 0-byte leftover from a previous failed download
+    rm -f "$dest"
+
     echo "  [downloading] $label..."
     mkdir -p "$(dirname "$dest")"
     if [ -n "$auth" ]; then
-        wget --quiet --show-progress --header="Authorization: Bearer $auth" -O "$dest" "$url"
+        wget --quiet --show-progress --header="Authorization: Bearer $auth" -O "$dest" "$url" || true
     else
-        wget --quiet --show-progress -O "$dest" "$url"
+        wget --quiet --show-progress -O "$dest" "$url" || true
+    fi
+
+    # Verify the download actually produced a file
+    if [ ! -s "$dest" ]; then
+        rm -f "$dest"
+        echo "  [FAILED] $label — download failed or file is empty"
+        if [ -n "$auth" ]; then
+            echo "           Check that your HF token is valid and you've accepted the license"
+        fi
     fi
 }
 
