@@ -373,21 +373,47 @@ REOF
 
     # ── Caddy ─────────────────────────────────────────────────────────
     if ! command -v caddy &>/dev/null; then
-        echo "Installing Caddy..."
-        sudo apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https
-        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null
-        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq caddy
+        if [ "$INSTALL_MODE" = "production" ]; then
+            # Production needs the Cloudflare DNS plugin for ACME TLS
+            echo "Building Caddy with Cloudflare DNS plugin..."
+            # Install Go if not present (needed for xcaddy)
+            if ! command -v go &>/dev/null; then
+                echo "  Installing Go..."
+                GO_VERSION="1.22.4"
+                wget --quiet "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -O /tmp/go.tar.gz
+                sudo rm -rf /usr/local/go
+                sudo tar -C /usr/local -xzf /tmp/go.tar.gz
+                rm /tmp/go.tar.gz
+                export PATH=$PATH:/usr/local/go/bin
+            fi
+            # Install xcaddy and build custom Caddy
+            go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+            ~/go/bin/xcaddy build --with github.com/caddy-dns/cloudflare --output /usr/bin/caddy
+            echo "  Caddy built with Cloudflare DNS support."
+        else
+            # Local mode — standard Caddy from apt is fine
+            echo "Installing Caddy..."
+            sudo apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https
+            curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null
+            curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq caddy
+        fi
     else
         echo "Caddy already installed."
     fi
 
     # Write Caddyfile for direct install (proxy to localhost, not Docker service name)
+    mkdir -p /etc/caddy
     if [ "$INSTALL_MODE" = "production" ]; then
-        # Read domain from .env
+        # Read domain and CF token from .env
         DOMAIN=$(grep "^APP_URL=" "$APP_DIR/.env" | sed 's|APP_URL=https://||')
+        CF_API_TOKEN=$(grep "^CLOUDFLARE_API_TOKEN=" "$APP_DIR/.env" | cut -d= -f2-)
         cat > /etc/caddy/Caddyfile <<CEOF
+{
+	acme_dns cloudflare $CF_API_TOKEN
+}
+
 $DOMAIN {
 	handle /api/* {
 		uri strip_prefix /api
