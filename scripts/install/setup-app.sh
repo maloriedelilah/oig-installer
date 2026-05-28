@@ -1,30 +1,48 @@
 #!/bin/bash
 # ── App Setup ────────────────────────────────────────────────────────
-# Configures .env, sets up swap, builds and starts the Docker stack.
+# Downloads the OIG release tarball, configures .env, sets up swap,
+# builds and starts the Docker stack.
 #
-# Expects these variables to be set by the parent install.sh:
-#   INSTALL_MODE  — "local" or "production"
-#   REPO_URL      — git clone URL
+# Expects these variables from the parent install.sh:
+#   INSTALL_MODE      — "local" or "production"
+#   OIG_TARBALL_URL   — URL to the release tarball on GitHub Releases
+#   OIG_VERSION       — version string (e.g. "0.1.0")
 set -e
 
 APP_DIR="/opt/oig"
 INSTALL_MODE="${INSTALL_MODE:-local}"
-REPO_URL="${REPO_URL:-https://github.com/YOUR_USERNAME/open-image-generator.git}"
 
-echo "=== Setting Up Open Image Generator ==="
+echo "=== Setting Up Open Image Generator v${OIG_VERSION} ==="
 echo "Mode: $INSTALL_MODE"
 echo ""
 
-# ── Clone or update repo ─────────────────────────────────────────────
-if [ -d "$APP_DIR/.git" ]; then
-    echo "App directory exists. Pulling latest..."
-    cd "$APP_DIR"
-    git pull --ff-only 2>/dev/null || echo "  (already up to date)"
+# ── Download or update app ───────────────────────────────────────────
+if [ -d "$APP_DIR" ] && [ -f "$APP_DIR/.oig-version" ]; then
+    INSTALLED_VERSION=$(cat "$APP_DIR/.oig-version" | tr -d '[:space:]')
+    if [ "$INSTALLED_VERSION" = "$OIG_VERSION" ]; then
+        echo "v${OIG_VERSION} is already installed. Skipping download."
+    else
+        echo "Upgrading from v${INSTALLED_VERSION} to v${OIG_VERSION}..."
+        echo "Downloading release tarball..."
+        TMP_TAR=$(mktemp)
+        wget --quiet --show-progress -O "$TMP_TAR" "$OIG_TARBALL_URL"
+        # Preserve .env and postgres data across upgrades
+        sudo rm -rf "$APP_DIR/api" "$APP_DIR/app" "$APP_DIR/Caddyfile"* "$APP_DIR/Dockerfile"* "$APP_DIR/docker-compose"*
+        tar -xzf "$TMP_TAR" -C "$APP_DIR" --strip-components=1
+        rm -f "$TMP_TAR"
+        echo "$OIG_VERSION" > "$APP_DIR/.oig-version"
+        echo "Upgrade extracted."
+    fi
 else
-    echo "Cloning repository..."
+    echo "Downloading OIG v${OIG_VERSION}..."
     sudo mkdir -p "$APP_DIR"
     sudo chown "$USER:$USER" "$APP_DIR"
-    git clone "$REPO_URL" "$APP_DIR"
+    TMP_TAR=$(mktemp)
+    wget --quiet --show-progress -O "$TMP_TAR" "$OIG_TARBALL_URL"
+    tar -xzf "$TMP_TAR" -C "$APP_DIR" --strip-components=1
+    rm -f "$TMP_TAR"
+    echo "$OIG_VERSION" > "$APP_DIR/.oig-version"
+    echo "Download complete."
 fi
 
 cd "$APP_DIR"
@@ -46,40 +64,47 @@ else
 fi
 
 # ── Generate .env ─────────────────────────────────────────────────────
-echo ""
-echo "=== Configuration ==="
-
-# Auto-generate secrets
-JWT_SECRET=$(openssl rand -hex 32)
-POSTGRES_PASSWORD=$(openssl rand -hex 32)
-
-if [ "$INSTALL_MODE" = "local" ]; then
-    # ── Local mode ────────────────────────────────────────────────────
+# Only generate .env on first install — upgrades keep existing config
+if [ -f "$APP_DIR/.env" ]; then
     echo ""
-    echo "Local mode — the app will be available at http://localhost"
-    echo "No domain, SSL, or email service required."
+    echo "Existing .env found — keeping current configuration."
+    echo "(Edit $APP_DIR/.env manually if you need to change settings)"
+else
     echo ""
+    echo "=== Configuration ==="
 
-    echo "--- Admin Account ---"
-    read -p "Admin email: " ADMIN_EMAIL
-    read -p "Admin username [admin]: " ADMIN_USERNAME
-    ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
-    while true; do
-        read -sp "Admin password (min 8 chars): " ADMIN_PASSWORD
+    # Auto-generate secrets
+    JWT_SECRET=$(openssl rand -hex 32)
+    POSTGRES_PASSWORD=$(openssl rand -hex 32)
+
+    if [ "$INSTALL_MODE" = "local" ]; then
+        # ── Local mode ────────────────────────────────────────────────
         echo ""
-        if [ ${#ADMIN_PASSWORD} -ge 8 ]; then
-            break
-        fi
-        echo "  Password must be at least 8 characters."
-    done
+        echo "Local mode — the app will be available at http://localhost"
+        echo "No domain, SSL, or email service required."
+        echo ""
 
-    echo ""
-    read -p "Site name [Open Image Generator]: " SITE_NAME
-    SITE_NAME="${SITE_NAME:-Open Image Generator}"
+        echo "--- Admin Account ---"
+        read -p "Admin email: " ADMIN_EMAIL
+        read -p "Admin username [admin]: " ADMIN_USERNAME
+        ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
+        while true; do
+            read -sp "Admin password (min 8 chars): " ADMIN_PASSWORD
+            echo ""
+            if [ ${#ADMIN_PASSWORD} -ge 8 ]; then
+                break
+            fi
+            echo "  Password must be at least 8 characters."
+        done
 
-    cat > "$APP_DIR/.env" <<EOF
+        echo ""
+        read -p "Site name [Open Image Generator]: " SITE_NAME
+        SITE_NAME="${SITE_NAME:-Open Image Generator}"
+
+        cat > "$APP_DIR/.env" <<EOF
 # ── Generated by installer (local mode) ──────────────────────────────
 # $(date)
+# OIG v${OIG_VERSION}
 
 # Database
 POSTGRES_USER=oig
@@ -106,59 +131,60 @@ SUPERADMIN_EMAIL=$ADMIN_EMAIL
 SUPERADMIN_PASSWORD=$ADMIN_PASSWORD
 EOF
 
-    COMPOSE_FILE="docker-compose.local.yml"
+        COMPOSE_FILE="docker-compose.local.yml"
 
-else
-    # ── Production mode ───────────────────────────────────────────────
-    echo ""
-    echo "Production mode — requires a domain and Cloudflare DNS."
-    echo ""
-
-    read -p "Domain (e.g. mysite.com): " DOMAIN
-    while [ -z "$DOMAIN" ]; do
-        read -p "  Domain is required: " DOMAIN
-    done
-
-    read -p "Cloudflare API token: " CF_TOKEN
-    while [ -z "$CF_TOKEN" ]; do
-        read -p "  Cloudflare token is required for SSL: " CF_TOKEN
-    done
-
-    echo ""
-    echo "--- Admin Account ---"
-    read -p "Admin email: " ADMIN_EMAIL
-    read -p "Admin username [admin]: " ADMIN_USERNAME
-    ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
-    while true; do
-        read -sp "Admin password (min 8 chars): " ADMIN_PASSWORD
+    else
+        # ── Production mode ───────────────────────────────────────────
         echo ""
-        if [ ${#ADMIN_PASSWORD} -ge 8 ]; then
-            break
+        echo "Production mode — requires a domain and Cloudflare DNS."
+        echo ""
+
+        read -p "Domain (e.g. mysite.com): " DOMAIN
+        while [ -z "$DOMAIN" ]; do
+            read -p "  Domain is required: " DOMAIN
+        done
+
+        read -p "Cloudflare API token: " CF_TOKEN
+        while [ -z "$CF_TOKEN" ]; do
+            read -p "  Cloudflare token is required for SSL: " CF_TOKEN
+        done
+
+        echo ""
+        echo "--- Admin Account ---"
+        read -p "Admin email: " ADMIN_EMAIL
+        read -p "Admin username [admin]: " ADMIN_USERNAME
+        ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
+        while true; do
+            read -sp "Admin password (min 8 chars): " ADMIN_PASSWORD
+            echo ""
+            if [ ${#ADMIN_PASSWORD} -ge 8 ]; then
+                break
+            fi
+            echo "  Password must be at least 8 characters."
+        done
+
+        echo ""
+        echo "--- Email (optional — skip to configure later in admin UI) ---"
+        read -p "Brevo API key [skip]: " BREVO_KEY
+        read -p "From email address [skip]: " FROM_EMAIL
+        read -p "From name [Open Image Generator]: " FROM_NAME
+        FROM_NAME="${FROM_NAME:-Open Image Generator}"
+
+        read -p "Site name [Open Image Generator]: " SITE_NAME
+        SITE_NAME="${SITE_NAME:-Open Image Generator}"
+
+        # Write Caddyfile with the domain
+        if [ ! -f "$APP_DIR/Caddyfile" ]; then
+            echo "ERROR: Caddyfile not found in $APP_DIR"
+            exit 1
         fi
-        echo "  Password must be at least 8 characters."
-    done
+        sed "s/yourdomain.com/$DOMAIN/g" "$APP_DIR/Caddyfile" > "$APP_DIR/Caddyfile.tmp"
+        mv "$APP_DIR/Caddyfile.tmp" "$APP_DIR/Caddyfile"
 
-    echo ""
-    echo "--- Email (optional — skip to configure later in admin UI) ---"
-    read -p "Brevo API key [skip]: " BREVO_KEY
-    read -p "From email address [skip]: " FROM_EMAIL
-    read -p "From name [Open Image Generator]: " FROM_NAME
-    FROM_NAME="${FROM_NAME:-Open Image Generator}"
-
-    read -p "Site name [Open Image Generator]: " SITE_NAME
-    SITE_NAME="${SITE_NAME:-Open Image Generator}"
-
-    # Write Caddyfile with the domain
-    if [ ! -f "$APP_DIR/Caddyfile" ]; then
-        echo "ERROR: Caddyfile not found in $APP_DIR"
-        exit 1
-    fi
-    sed "s/yourdomain.com/$DOMAIN/g" "$APP_DIR/Caddyfile" > "$APP_DIR/Caddyfile.tmp"
-    mv "$APP_DIR/Caddyfile.tmp" "$APP_DIR/Caddyfile"
-
-    cat > "$APP_DIR/.env" <<EOF
+        cat > "$APP_DIR/.env" <<EOF
 # ── Generated by installer (production mode) ─────────────────────────
 # $(date)
+# OIG v${OIG_VERSION}
 
 # Database
 POSTGRES_USER=oig
@@ -193,7 +219,17 @@ EMAIL_FROM_NAME=$FROM_NAME
 EMAIL_FROM_EMAIL=${FROM_EMAIL:-}
 EOF
 
-    COMPOSE_FILE="docker-compose.prod.yml"
+        COMPOSE_FILE="docker-compose.prod.yml"
+    fi
+fi
+
+# ── Determine compose file if not set (upgrade path) ─────────────────
+if [ -z "$COMPOSE_FILE" ]; then
+    if grep -q "CORS_ORIGIN=http://localhost" "$APP_DIR/.env" 2>/dev/null; then
+        COMPOSE_FILE="docker-compose.local.yml"
+    else
+        COMPOSE_FILE="docker-compose.prod.yml"
+    fi
 fi
 
 # ── Build and start ───────────────────────────────────────────────────

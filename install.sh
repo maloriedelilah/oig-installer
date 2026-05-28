@@ -2,16 +2,16 @@
 # ── Open Image Generator — One-Command Installer ────────────────────
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/open-image-generator/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/maloriedelilah/oig-installer/main/install.sh | bash
 #   — or —
-#   git clone <repo> && cd open-image-generator && bash install.sh
+#   git clone https://github.com/maloriedelilah/oig-installer.git && cd oig-installer && bash install.sh
 #
 # Installs everything needed to run OIG on a fresh Linux box:
 #   1. Checks for an Ampere+ NVIDIA GPU
 #   2. Installs Docker + Docker Compose
 #   3. Installs Ollama + pulls qwen3:8b
 #   4. Installs ComfyUI + custom nodes + downloads all models
-#   5. Clones the app, configures .env, builds and starts the Docker stack
+#   5. Downloads the app release, configures .env, builds and starts Docker
 #
 # Supports two modes:
 #   local       — HTTP only, no domain/SSL required (default)
@@ -27,6 +27,11 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m' # No Colour
 
+# ── GitHub coordinates ───────────────────────────────────────────────
+# Change these to your GitHub org/user and repo names.
+INSTALLER_REPO="maloriedelilah/oig-installer"
+INSTALLER_BRANCH="main"
+
 banner() {
     echo ""
     echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════════╗${NC}"
@@ -41,10 +46,6 @@ step() {
     echo -e "${GREEN}────────────────────────────────────────────────${NC}"
 }
 
-warn() {
-    echo -e "${YELLOW}WARNING:${NC} $1"
-}
-
 fail() {
     echo -e "${RED}ERROR:${NC} $1"
     exit 1
@@ -53,39 +54,49 @@ fail() {
 banner
 
 # ── Pre-flight checks ───────────────────────────────────────────────
-# Must be Linux
 if [ "$(uname)" != "Linux" ]; then
     fail "This installer only supports Linux."
 fi
 
-# Need sudo
 if ! sudo -v 2>/dev/null; then
     fail "This installer requires sudo access."
 fi
 
 # ── Determine script directory ───────────────────────────────────────
-# If run from inside the repo, use local scripts.
-# If run standalone (curl | bash), we'll clone the repo first.
+# If run from inside the cloned installer repo, use local scripts.
+# If run standalone (curl | bash), clone the installer repo first.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_URL="${REPO_URL:-https://github.com/YOUR_USERNAME/open-image-generator.git}"
 APP_DIR="/opt/oig"
 
-# Check if sub-scripts exist locally (i.e. we're inside the cloned repo)
 if [ -f "$SCRIPT_DIR/scripts/install/check-gpu.sh" ]; then
     INSTALL_SCRIPTS="$SCRIPT_DIR/scripts/install"
+    # Read VERSION from the local repo
+    if [ -f "$SCRIPT_DIR/VERSION" ]; then
+        OIG_VERSION=$(cat "$SCRIPT_DIR/VERSION" | tr -d '[:space:]')
+    else
+        fail "VERSION file not found. Your installer repo may be incomplete."
+    fi
 else
-    # Running standalone — clone the repo first to get the scripts
-    echo "Cloning repository to get installer scripts..."
+    # Running standalone — clone the installer repo to get scripts + VERSION
+    echo "Fetching installer scripts..."
     TMP_CLONE_DIR=$(mktemp -d)
-    git clone --depth 1 "$REPO_URL" "$TMP_CLONE_DIR/oig"
-    INSTALL_SCRIPTS="$TMP_CLONE_DIR/oig/scripts/install"
-    SCRIPT_DIR="$TMP_CLONE_DIR/oig"
+    git clone --depth 1 -b "$INSTALLER_BRANCH" "https://github.com/$INSTALLER_REPO.git" "$TMP_CLONE_DIR/installer"
+    INSTALL_SCRIPTS="$TMP_CLONE_DIR/installer/scripts/install"
+    SCRIPT_DIR="$TMP_CLONE_DIR/installer"
+    OIG_VERSION=$(cat "$SCRIPT_DIR/VERSION" | tr -d '[:space:]')
 fi
 
-# Make all sub-scripts executable
 chmod +x "$INSTALL_SCRIPTS"/*.sh
 
+echo -e "OIG version: ${BOLD}v${OIG_VERSION}${NC}"
+
+# Build the download URL for the app tarball
+OIG_TARBALL_URL="https://github.com/$INSTALLER_REPO/releases/download/v${OIG_VERSION}/oig-v${OIG_VERSION}.tar.gz"
+export OIG_TARBALL_URL
+export OIG_VERSION
+
 # ── Choose install mode ──────────────────────────────────────────────
+echo ""
 echo "How would you like to deploy?"
 echo ""
 echo "  1) Local mode   — HTTP only at http://localhost (no domain needed)"
@@ -117,11 +128,6 @@ if [ -n "$HF_TOKEN" ]; then
 else
     echo -e "Klein 9B: ${YELLOW}skipped${NC} (you can add it later)"
 fi
-
-# Export variables that sub-scripts need
-export INSTALL_MODE
-export HF_TOKEN
-export REPO_URL
 
 # ═══════════════════════════════════════════════════════════════════
 # Step 1: GPU Check
@@ -169,6 +175,8 @@ else
     echo "  (DNS may take a few minutes to propagate)"
 fi
 
+echo ""
+echo -e "  Version: ${BOLD}v${OIG_VERSION}${NC}"
 echo ""
 echo "  Services:"
 echo "    App          → Docker (port 80)"
