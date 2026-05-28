@@ -1,6 +1,9 @@
 #!/bin/bash
 # ── Ollama Installation ──────────────────────────────────────────────
+# Expects HAS_SYSTEMD to be set by the parent install.sh.
 set -e
+
+HAS_SYSTEMD="${HAS_SYSTEMD:-0}"
 
 echo "=== Installing Ollama ==="
 
@@ -11,42 +14,85 @@ else
     curl -fsSL https://ollama.com/install.sh | sh
 fi
 
-# Wait for Ollama to be ready
-echo "Waiting for Ollama to start..."
-for _ in {1..30}; do
-    if curl -sf http://localhost:11434/api/tags &>/dev/null; then
-        break
+# ── Helper: wait for Ollama API ──────────────────────────────────────
+wait_for_ollama() {
+    for _ in {1..30}; do
+        if curl -sf http://localhost:11434/api/tags &>/dev/null; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
+# ── Start & configure Ollama ─────────────────────────────────────────
+if [ "$HAS_SYSTEMD" = "1" ]; then
+    # ── systemd path (normal Linux servers) ──────────────────────────
+    sudo systemctl start ollama 2>/dev/null || true
+
+    echo "Waiting for Ollama to start..."
+    if ! wait_for_ollama; then
+        echo "ERROR: Ollama didn't start within 30 seconds."
+        echo "Try: sudo systemctl start ollama"
+        exit 1
     fi
-    sleep 1
-done
 
-if ! curl -sf http://localhost:11434/api/tags &>/dev/null; then
-    echo "ERROR: Ollama didn't start within 30 seconds."
-    echo "Try: sudo systemctl start ollama"
-    exit 1
-fi
-
-# Configure Ollama to listen on all interfaces (for Docker containers)
-echo "Configuring Ollama to listen on 0.0.0.0 (for Docker access)..."
-sudo mkdir -p /etc/systemd/system/ollama.service.d
-cat <<'EOF' | sudo tee /etc/systemd/system/ollama.service.d/override.conf >/dev/null
+    echo "Configuring Ollama to listen on 0.0.0.0 (for Docker access)..."
+    sudo mkdir -p /etc/systemd/system/ollama.service.d
+    cat <<'EOF' | sudo tee /etc/systemd/system/ollama.service.d/override.conf >/dev/null
 [Service]
 Environment="OLLAMA_HOST=0.0.0.0"
 EOF
+    sudo systemctl daemon-reload
+    sudo systemctl restart ollama
 
-sudo systemctl daemon-reload
-sudo systemctl restart ollama
-
-# Wait for restart
-echo "Waiting for Ollama to restart..."
-for _ in {1..30}; do
-    if curl -sf http://localhost:11434/api/tags &>/dev/null; then
-        break
+    echo "Waiting for Ollama to restart..."
+    if ! wait_for_ollama; then
+        echo "WARNING: Ollama didn't come back after config change. Continuing..."
     fi
-    sleep 1
-done
+else
+    # ── supervisord path (RunPod, containers) ────────────────────────
+    # Install supervisor if not present
+    if ! command -v supervisord &>/dev/null; then
+        echo "Installing supervisord (process manager)..."
+        apt-get update -qq
+        apt-get install -y -qq supervisor
+    fi
 
-# Pull the base model
+    # Ensure supervisor is running
+    if ! pgrep -x supervisord &>/dev/null; then
+        supervisord -c /etc/supervisor/supervisord.conf 2>/dev/null || true
+    fi
+
+    echo "Creating Ollama supervisor config..."
+    mkdir -p /etc/supervisor/conf.d
+    cat > /etc/supervisor/conf.d/ollama.conf <<'EOF'
+[program:ollama]
+command=/usr/local/bin/ollama serve
+environment=OLLAMA_HOST="0.0.0.0"
+autostart=true
+autorestart=true
+startsecs=5
+startretries=3
+stdout_logfile=/var/log/ollama.log
+stderr_logfile=/var/log/ollama.log
+EOF
+
+    supervisorctl reread 2>/dev/null || true
+    supervisorctl update 2>/dev/null || true
+    supervisorctl start ollama 2>/dev/null || true
+
+    echo "Waiting for Ollama to start..."
+    if ! wait_for_ollama; then
+        echo "ERROR: Ollama didn't start within 30 seconds."
+        echo "Check: tail -f /var/log/ollama.log"
+        exit 1
+    fi
+fi
+
+echo "Ollama is running."
+
+# ── Pull the base model ──────────────────────────────────────────────
 echo "Pulling qwen3:8b model (this may take a few minutes)..."
 ollama pull qwen3:8b
 

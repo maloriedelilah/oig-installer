@@ -153,11 +153,15 @@ download \
 
 deactivate
 
-# ── Systemd Service ───────────────────────────────────────────────────
+# ── Service Setup ────────────────────────────────────────────────────
 echo ""
-echo "Creating ComfyUI systemd service..."
+HAS_SYSTEMD="${HAS_SYSTEMD:-0}"
 
-cat <<EOF | sudo tee /etc/systemd/system/comfyui.service >/dev/null
+if [ "$HAS_SYSTEMD" = "1" ]; then
+    # ── systemd (normal Linux servers) ───────────────────────────────
+    echo "Creating ComfyUI systemd service..."
+
+    cat <<EOF | sudo tee /etc/systemd/system/comfyui.service >/dev/null
 [Unit]
 Description=ComfyUI
 After=network.target
@@ -175,9 +179,37 @@ Environment=CUDA_VISIBLE_DEVICES=0
 WantedBy=multi-user.target
 EOF
 
-sudo systemctl daemon-reload
-sudo systemctl enable comfyui
-sudo systemctl start comfyui
+    sudo systemctl daemon-reload
+    sudo systemctl enable comfyui
+    sudo systemctl start comfyui
+else
+    # ── supervisord (RunPod, containers) ─────────────────────────────
+    echo "Creating ComfyUI supervisor config..."
+
+    # Ensure supervisor is running (Ollama script installs it)
+    if ! pgrep -x supervisord &>/dev/null; then
+        supervisord -c /etc/supervisor/supervisord.conf 2>/dev/null || true
+    fi
+
+    mkdir -p /etc/supervisor/conf.d
+    cat > /etc/supervisor/conf.d/comfyui.conf <<EOF
+[program:comfyui]
+command=$COMFY_DIR/venv/bin/python main.py --listen 0.0.0.0 --port 8188 --preview-method latent2rgb
+directory=$COMFY_DIR
+user=$USER
+environment=CUDA_VISIBLE_DEVICES="0"
+autostart=true
+autorestart=true
+startsecs=10
+startretries=3
+stdout_logfile=/var/log/comfyui.log
+stderr_logfile=/var/log/comfyui.log
+EOF
+
+    supervisorctl reread 2>/dev/null || true
+    supervisorctl update 2>/dev/null || true
+    supervisorctl start comfyui 2>/dev/null || true
+fi
 
 # Wait for ComfyUI to be ready
 echo "Waiting for ComfyUI to start (loading models, may take a minute)..."
@@ -191,7 +223,11 @@ done
 
 if ! curl -sf http://localhost:8188/queue &>/dev/null; then
     echo "WARNING: ComfyUI hasn't responded yet. It may still be loading models."
-    echo "Check: sudo journalctl -u comfyui -f"
+    if [ "$HAS_SYSTEMD" = "1" ]; then
+        echo "Check: sudo journalctl -u comfyui -f"
+    else
+        echo "Check: tail -f /var/log/comfyui.log"
+    fi
 fi
 
 echo ""

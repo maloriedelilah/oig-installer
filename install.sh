@@ -68,6 +68,12 @@ if ! sudo -v 2>/dev/null; then
     fail "This installer requires sudo access."
 fi
 
+# Detect init system — systemd on normal servers, supervisord on containers
+export HAS_SYSTEMD=0
+if pidof systemd &>/dev/null && command -v systemctl &>/dev/null; then
+    export HAS_SYSTEMD=1
+fi
+
 # ── Determine script directory ───────────────────────────────────────
 # If run from inside the cloned installer repo, use local scripts.
 # If run standalone (curl | bash), clone the installer repo first.
@@ -184,17 +190,28 @@ fi
 echo ""
 echo -e "  Version: ${BOLD}v${OIG_VERSION}${NC}"
 echo ""
+if [ "$HAS_SYSTEMD" = "1" ]; then
+    SVCMGR="systemd"
+else
+    SVCMGR="supervisord"
+fi
 echo "  Services:"
 echo "    App          → Docker (port 80)"
-echo "    ComfyUI      → systemd (port 8188)"
-echo "    Ollama       → systemd (port 11434)"
+echo "    ComfyUI      → $SVCMGR (port 8188)"
+echo "    Ollama       → $SVCMGR (port 11434)"
 echo ""
 echo "  Useful commands:"
 echo "    cd $APP_DIR"
 echo "    docker compose logs -f            # app logs"
-echo "    sudo journalctl -u comfyui -f     # ComfyUI logs"
-echo "    sudo journalctl -u ollama -f      # Ollama logs"
-echo "    sudo systemctl restart comfyui    # restart ComfyUI"
+if [ "$HAS_SYSTEMD" = "1" ]; then
+    echo "    sudo journalctl -u comfyui -f     # ComfyUI logs"
+    echo "    sudo journalctl -u ollama -f      # Ollama logs"
+    echo "    sudo systemctl restart comfyui    # restart ComfyUI"
+else
+    echo "    tail -f /var/log/comfyui.log      # ComfyUI logs"
+    echo "    tail -f /var/log/ollama.log       # Ollama logs"
+    echo "    supervisorctl restart comfyui     # restart ComfyUI"
+fi
 echo ""
 
 # Clean up temp clone if we made one
