@@ -232,9 +232,9 @@ SUPERADMIN_EMAIL=$ADMIN_EMAIL
 SUPERADMIN_PASSWORD=$ADMIN_PASSWORD
 
 # Email (Brevo)
-BREVO_API_KEY=${BREVO_KEY:-}
-EMAIL_FROM_NAME=$FROM_NAME
-EMAIL_FROM_EMAIL=${FROM_EMAIL:-}
+BREVO_API_KEY="${BREVO_KEY:-}"
+EMAIL_FROM_NAME="$FROM_NAME"
+EMAIL_FROM_EMAIL="${FROM_EMAIL:-}"
 EOF
 
         COMPOSE_FILE="docker-compose.prod.yml"
@@ -278,9 +278,9 @@ else
     echo "=== Installing services directly (no Docker) ==="
     echo ""
 
-    # Source .env so we can use the credentials
+    # Load .env variables (grep out comments, eval handles quoted values)
     set -a
-    source "$APP_DIR/.env"
+    eval "$(grep -v '^\s*#' "$APP_DIR/.env" | grep -v '^\s*$')"
     set +a
 
     # ── PostgreSQL ────────────────────────────────────────────────────
@@ -479,9 +479,9 @@ CEOF
 cd $APP_DIR/api
 source venv/bin/activate
 
-# Load .env
+# Load .env (eval handles quoted values safely)
 set -a
-source $APP_DIR/.env
+eval "\$(grep -v '^\s*#' $APP_DIR/.env | grep -v '^\s*\$')"
 set +a
 
 # Override Docker-style URLs for direct install
