@@ -124,7 +124,7 @@ APP_URL=http://localhost
 # GPU Services
 COMFYUI_URL=http://host.docker.internal:8188
 LMSTUDIO_URL=http://host.docker.internal:11434
-LLM_MODEL=qwen3:8b
+LLM_MODEL=qwen3:8b-nothink
 
 # Admin
 SUPERADMIN_EMAIL=$ADMIN_EMAIL
@@ -204,7 +204,7 @@ APP_URL=https://$DOMAIN
 # GPU Services
 COMFYUI_URL=http://host.docker.internal:8188
 LMSTUDIO_URL=http://host.docker.internal:11434
-LLM_MODEL=qwen3:8b
+LLM_MODEL=qwen3:8b-nothink
 
 # Cloudflare
 CLOUDFLARE_API_TOKEN=$CF_TOKEN

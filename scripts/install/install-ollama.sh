@@ -46,9 +46,27 @@ for _ in {1..30}; do
     sleep 1
 done
 
-# Pull the LLM model
+# Pull the base model
 echo "Pulling qwen3:8b model (this may take a few minutes)..."
 ollama pull qwen3:8b
+
+# Create a nothink variant — bakes /no_think into the chat template so the
+# model never wastes tokens on chain-of-thought reasoning for prompt rewrites.
+echo "Creating qwen3:8b-nothink model..."
+cat << 'MODELFILE' > /tmp/Modelfile
+FROM qwen3:8b
+PARAMETER num_ctx 4096
+TEMPLATE """{{- if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{- range .Messages }}{{- if eq .Role "user" }}<|im_start|>user
+{{ .Content }} /no_think<|im_end|>
+{{ else if eq .Role "assistant" }}<|im_start|>assistant
+{{ .Content }}<|im_end|>
+{{ end }}{{- end }}<|im_start|>assistant
+"""
+MODELFILE
+ollama create qwen3:8b-nothink -f /tmp/Modelfile
+rm -f /tmp/Modelfile
 
 echo "Ollama is ready."
 echo ""
