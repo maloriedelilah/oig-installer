@@ -61,33 +61,31 @@ echo ""
 # ── Build the tarball ────────────────────────────────────────────────
 echo "Building tarball..."
 
-# Create a clean staging directory
+# Stage a clean copy via tar pipe (avoids symlink issues with cp on Windows).
+# First tar from the source with excludes, then extract into a staging dir.
 STAGING=$(mktemp -d)
 STAGE_DIR="$STAGING/oig-v${VERSION}"
 mkdir -p "$STAGE_DIR"
 
-# Copy app files, excluding things that shouldn't ship
-rsync -a \
+tar -cf - -C "$OIG_SOURCE" \
     --exclude='.git' \
     --exclude='.gitignore' \
     --exclude='.env' \
-    --exclude='.env.*' \
     --exclude='node_modules' \
-    --exclude='__pycache__' \
-    --exclude='.pytest_cache' \
-    --exclude='*.pyc' \
-    --exclude='.mypy_cache' \
     --exclude='dist' \
     --exclude='.vite' \
+    --exclude='__pycache__' \
+    --exclude='.pytest_cache' \
+    --exclude='.mypy_cache' \
+    --exclude='*.pyc' \
+    --exclude='*.tar.gz' \
     --exclude='scripts/install' \
     --exclude='install.sh' \
     --exclude='setup-deploy-key.sh' \
     --exclude='release.sh' \
     --exclude='DEPLOY.md' \
-    --exclude='*.tar.gz' \
-    "$OIG_SOURCE/" "$STAGE_DIR/"
+    . | tar -xf - -C "$STAGE_DIR"
 
-# Create the tarball
 tar -czf "$SCRIPT_DIR/$TARBALL" -C "$STAGING" "oig-v${VERSION}"
 rm -rf "$STAGING"
 
