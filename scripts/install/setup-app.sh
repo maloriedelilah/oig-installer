@@ -48,7 +48,12 @@ fi
 cd "$APP_DIR"
 
 # ── Swap space ────────────────────────────────────────────────────────
-if [ ! -f /swapfile ]; then
+# Containers (RunPod, Docker) can't create swap — skip gracefully.
+if [ -f /swapfile ]; then
+    echo "Swap already exists."
+elif [ -f /.dockerenv ] || grep -q 'docker\|lxc\|kubepods' /proc/1/cgroup 2>/dev/null; then
+    echo "Container detected — skipping swap setup."
+else
     echo ""
     echo "Adding 8GB swap space (ComfyUI's VAE decode can spill to system RAM)..."
     sudo fallocate -l 8G /swapfile
@@ -59,8 +64,6 @@ if [ ! -f /swapfile ]; then
         echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
     fi
     echo "Swap configured."
-else
-    echo "Swap already exists."
 fi
 
 # ── Generate .env ─────────────────────────────────────────────────────

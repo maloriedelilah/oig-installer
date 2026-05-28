@@ -1,8 +1,8 @@
 #!/bin/bash
 # ── Open Image Generator — One-Command Installer ────────────────────
 #
-# Usage:
-#   curl -fsSL https://raw.githubusercontent.com/maloriedelilah/oig-installer/main/install.sh | bash
+# Usage (one-liner — downloads then runs so prompts work):
+#   curl -fsSL https://raw.githubusercontent.com/maloriedelilah/oig-installer/main/install.sh -o /tmp/oig-install.sh && bash /tmp/oig-install.sh
 #   — or —
 #   git clone https://github.com/maloriedelilah/oig-installer.git && cd oig-installer && bash install.sh
 #
@@ -35,7 +35,7 @@ INSTALLER_BRANCH="main"
 banner() {
     echo ""
     echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}${BOLD}║           Open Image Generator — Installer              ║${NC}"
+    echo -e "${CYAN}${BOLD}║           Open Image Generator — Installer               ║${NC}"
     echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════════╝${NC}"
     echo ""
 }
@@ -54,10 +54,17 @@ fail() {
 banner
 
 # ── Ensure stdin reads from the terminal ─────────────────────────────
-# When run via "curl | bash", stdin is the pipe. Redirect to /dev/tty
-# so interactive prompts work.
+# When run via "curl | bash", stdin is the curl pipe — interactive
+# prompts get nothing. Detect this and re-launch properly.
 if [ ! -t 0 ] && [ -e /dev/tty ]; then
-    exec </dev/tty
+    echo "Piped input detected — downloading installer to run interactively..."
+    SELF_TMP=$(mktemp /tmp/oig-install.XXXXXX.sh)
+    curl -fsSL "https://raw.githubusercontent.com/maloriedelilah/oig-installer/main/install.sh" -o "$SELF_TMP"
+    chmod +x "$SELF_TMP"
+    bash "$SELF_TMP" </dev/tty
+    EXIT_CODE=$?
+    rm -f "$SELF_TMP"
+    exit $EXIT_CODE
 fi
 
 # ── Pre-flight checks ───────────────────────────────────────────────
