@@ -554,8 +554,8 @@ SEOF
         # Set up DNS route
         DOMAIN=$(grep "^APP_URL=" "$APP_DIR/.env" | sed 's|APP_URL=https://||')
         echo "Routing $DOMAIN → tunnel '$TUNNEL_NAME'..."
-        cloudflared tunnel route dns "$TUNNEL_NAME" "$DOMAIN" 2>/dev/null || \
-            echo "  (DNS route may already exist — that's fine)"
+        echo "  (will overwrite existing DNS record if present)"
+        cloudflared tunnel route dns --overwrite-dns "$TUNNEL_NAME" "$DOMAIN" 2>/dev/null || true
 
         # Supervisord / systemd config for cloudflared
         if [ "$HAS_SYSTEMD" = "1" ]; then
