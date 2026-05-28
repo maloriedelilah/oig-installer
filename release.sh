@@ -84,6 +84,9 @@ tar -cf - -C "$OIG_SOURCE" \
     --exclude='setup-deploy-key.sh' \
     --exclude='release.sh' \
     --exclude='DEPLOY.md' \
+    --exclude='Flux + Comfy Web UI' \
+    --exclude='*.timestamp-*' \
+    --exclude='~$*' \
     . | tar -xf - -C "$STAGE_DIR"
 
 tar -czf "$SCRIPT_DIR/$TARBALL" -C "$STAGING" "oig-v${VERSION}"
