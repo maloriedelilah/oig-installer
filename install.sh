@@ -222,6 +222,9 @@ else
     echo "    Caddy        → $SVCMGR (port 80)"
     echo "    PostgreSQL   → $SVCMGR (port 5432)"
     echo "    Redis        → $SVCMGR (port 6379)"
+    if [ "$INSTALL_MODE" = "production" ]; then
+        echo "    Cloudflared  → $SVCMGR (tunnel)"
+    fi
 fi
 echo "    ComfyUI      → $SVCMGR (port 8188)"
 echo "    Ollama       → $SVCMGR (port 11434)"
@@ -233,6 +236,9 @@ if [ "$HAS_DOCKER" = "1" ]; then
 else
     echo "    tail -f /var/log/oig-backend.log  # backend logs"
     echo "    tail -f /var/log/caddy.log        # caddy logs"
+    if [ "$INSTALL_MODE" = "production" ]; then
+        echo "    tail -f /var/log/cloudflared.log  # tunnel logs"
+    fi
 fi
 if [ "$HAS_SYSTEMD" = "1" ]; then
     echo "    sudo journalctl -u comfyui -f     # ComfyUI logs"

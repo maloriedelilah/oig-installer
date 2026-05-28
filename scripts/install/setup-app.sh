@@ -337,9 +337,10 @@ else
         sudo systemctl start redis-server
         sudo systemctl enable redis-server
     else
-        if ! pgrep -x redis-server &>/dev/null; then
-            redis-server --daemonize yes
-        fi
+        # Stop any daemonized Redis so supervisord can manage it
+        redis-cli shutdown 2>/dev/null || true
+        sleep 1
+
         # Add supervisord config for Redis
         mkdir -p /etc/supervisor/conf.d
         cat > /etc/supervisor/conf.d/redis.conf <<REOF
@@ -372,69 +373,22 @@ REOF
     echo "Frontend built."
 
     # ── Caddy ─────────────────────────────────────────────────────────
+    # In direct-install mode, Caddy always serves plain HTTP on port 80.
+    # For production, Cloudflare Tunnel handles external TLS (set up below).
     if ! command -v caddy &>/dev/null; then
-        if [ "$INSTALL_MODE" = "production" ]; then
-            # Production needs the Cloudflare DNS plugin for ACME TLS
-            echo "Building Caddy with Cloudflare DNS plugin..."
-            # Install Go if not present (needed for xcaddy)
-            if ! command -v go &>/dev/null; then
-                echo "  Installing Go..."
-                GO_VERSION="1.22.4"
-                wget --quiet "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -O /tmp/go.tar.gz
-                sudo rm -rf /usr/local/go
-                sudo tar -C /usr/local -xzf /tmp/go.tar.gz
-                rm /tmp/go.tar.gz
-                export PATH=$PATH:/usr/local/go/bin
-            fi
-            # Install xcaddy and build custom Caddy
-            go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-            ~/go/bin/xcaddy build --with github.com/caddy-dns/cloudflare --output /usr/bin/caddy
-            echo "  Caddy built with Cloudflare DNS support."
-        else
-            # Local mode — standard Caddy from apt is fine
-            echo "Installing Caddy..."
-            sudo apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https
-            curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null
-            curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq caddy
-        fi
+        echo "Installing Caddy..."
+        sudo apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq caddy
     else
         echo "Caddy already installed."
     fi
 
-    # Write Caddyfile for direct install (proxy to localhost, not Docker service name)
+    # Write Caddyfile — always plain HTTP (Cloudflare Tunnel or direct access)
     mkdir -p /etc/caddy
-    if [ "$INSTALL_MODE" = "production" ]; then
-        # Read domain and CF token from .env
-        DOMAIN=$(grep "^APP_URL=" "$APP_DIR/.env" | sed 's|APP_URL=https://||')
-        CF_API_TOKEN=$(grep "^CLOUDFLARE_API_TOKEN=" "$APP_DIR/.env" | cut -d= -f2-)
-        cat > /etc/caddy/Caddyfile <<CEOF
-{
-	acme_dns cloudflare $CF_API_TOKEN
-}
-
-$DOMAIN {
-	handle /api/* {
-		uri strip_prefix /api
-		reverse_proxy localhost:${BACKEND_PORT:-8000}
-	}
-
-	handle {
-		root * $FRONTEND_DIR
-		try_files {path} /index.html
-		file_server
-	}
-
-	header {
-		X-Content-Type-Options nosniff
-		X-Frame-Options DENY
-		Referrer-Policy strict-origin-when-cross-origin
-	}
-}
-CEOF
-    else
-        cat > /etc/caddy/Caddyfile <<CEOF
+    cat > /etc/caddy/Caddyfile <<CEOF
 :80 {
 	handle /api/* {
 		uri strip_prefix /api
@@ -560,6 +514,84 @@ SEOF
     fi
 
     echo "Backend configured."
+
+    # ── Cloudflare Tunnel (production without Docker) ─────────────────
+    if [ "$INSTALL_MODE" = "production" ]; then
+        echo ""
+        echo "=== Setting up Cloudflare Tunnel ==="
+        echo ""
+        echo "Cloudflare Tunnel creates a secure outbound connection from this server"
+        echo "to Cloudflare, so your domain works without opening inbound ports."
+        echo ""
+
+        # Install cloudflared
+        if ! command -v cloudflared &>/dev/null; then
+            echo "Installing cloudflared..."
+            curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared
+            chmod +x /usr/local/bin/cloudflared
+        else
+            echo "cloudflared already installed."
+        fi
+
+        # Check if tunnel credentials already exist (re-run scenario)
+        TUNNEL_NAME="oig-$(hostname | cut -c1-8)"
+        TUNNEL_CRED_DIR="/root/.cloudflared"
+
+        if [ -d "$TUNNEL_CRED_DIR" ] && ls "$TUNNEL_CRED_DIR"/*.json &>/dev/null 2>&1; then
+            echo "Existing tunnel credentials found — reusing."
+        else
+            echo ""
+            echo "You need to authenticate cloudflared with your Cloudflare account."
+            echo "This will open a URL — copy and paste it into your browser to authorize."
+            echo ""
+            read -p "Press Enter to start authentication..." _
+            cloudflared tunnel login
+
+            echo ""
+            echo "Creating tunnel '$TUNNEL_NAME'..."
+            cloudflared tunnel create "$TUNNEL_NAME"
+        fi
+
+        # Set up DNS route
+        DOMAIN=$(grep "^APP_URL=" "$APP_DIR/.env" | sed 's|APP_URL=https://||')
+        echo "Routing $DOMAIN → tunnel '$TUNNEL_NAME'..."
+        cloudflared tunnel route dns "$TUNNEL_NAME" "$DOMAIN" 2>/dev/null || \
+            echo "  (DNS route may already exist — that's fine)"
+
+        # Supervisord / systemd config for cloudflared
+        if [ "$HAS_SYSTEMD" = "1" ]; then
+            cat <<TEOF | sudo tee /etc/systemd/system/cloudflared.service >/dev/null
+[Unit]
+Description=Cloudflare Tunnel
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloudflared tunnel run --url http://localhost:80 $TUNNEL_NAME
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+TEOF
+            sudo systemctl daemon-reload
+            sudo systemctl enable cloudflared
+            sudo systemctl start cloudflared
+        else
+            mkdir -p /etc/supervisor/conf.d
+            cat > /etc/supervisor/conf.d/cloudflared.conf <<TEOF
+[program:cloudflared]
+command=/usr/local/bin/cloudflared tunnel run --url http://localhost:80 $TUNNEL_NAME
+user=root
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/cloudflared.log
+stderr_logfile=/var/log/cloudflared.log
+TEOF
+        fi
+
+        echo "Cloudflare Tunnel configured."
+    fi
 
     # ── Start all supervisord services ────────────────────────────────
     if [ "$HAS_SYSTEMD" != "1" ]; then

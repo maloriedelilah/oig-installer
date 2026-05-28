@@ -36,8 +36,18 @@ fi
 source venv/bin/activate
 
 # Install PyTorch with CUDA support
-echo "Installing PyTorch (CUDA 12.4)..."
-pip install --quiet torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+# Detect GPU compute capability to pick the right PyTorch build
+GPU_CC=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1 | tr -d '[:space:]')
+GPU_CC_MAJOR=$(echo "$GPU_CC" | cut -d. -f1)
+
+if [ "$GPU_CC_MAJOR" -ge 10 ] 2>/dev/null; then
+    # Blackwell (sm_120) and newer need CUDA 12.8+
+    echo "Detected compute capability $GPU_CC (Blackwell+) — installing PyTorch with CUDA 12.8..."
+    pip install --quiet torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+else
+    echo "Installing PyTorch (CUDA 12.4)..."
+    pip install --quiet torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+fi
 
 echo "Installing ComfyUI requirements..."
 pip install --quiet -r requirements.txt
