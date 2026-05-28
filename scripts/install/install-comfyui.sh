@@ -104,7 +104,19 @@ download() {
         rm -f "$dest"
         echo "  [FAILED] $label — download failed or file is empty"
         if [ -n "$auth" ]; then
-            echo "           Check that your HF token is valid and you've accepted the license"
+            # Extract the model page URL from the download URL
+            local model_page
+            model_page=$(echo "$url" | sed 's|/resolve/main/.*||')
+            echo ""
+            echo "           Possible causes:"
+            echo "             • You haven't accepted the model license yet"
+            echo "             • Your Hugging Face token is invalid or expired"
+            echo ""
+            echo "           To fix:"
+            echo "             1. Accept the license: $model_page"
+            echo "             2. Check your token:   https://huggingface.co/settings/tokens"
+            echo "             3. Re-run the installer — it will skip models already downloaded"
+            echo ""
         fi
     fi
 }
