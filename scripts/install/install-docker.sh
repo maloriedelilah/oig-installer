@@ -4,6 +4,9 @@ set -e
 
 echo "=== Installing Docker ==="
 
+# Default: assume Docker will work
+export HAS_DOCKER=1
+
 if command -v docker &>/dev/null; then
     echo "Docker is already installed: $(docker --version)"
 
@@ -29,10 +32,8 @@ fi
 # (root can always use Docker, so skip the group check)
 if [ "$(id -u)" = "0" ]; then
     USE_SUDO_DOCKER=0
-    docker info &>/dev/null && echo "Docker is working."
 elif groups "$USER" | grep -q docker; then
     USE_SUDO_DOCKER=0
-    docker info &>/dev/null && echo "Docker is working."
 else
     echo "Adding $USER to docker group..."
     sudo usermod -aG docker "$USER"
@@ -41,7 +42,44 @@ else
     echo "The installer will use sudo for docker commands in this session."
     echo ""
     USE_SUDO_DOCKER=1
-    sudo docker info &>/dev/null && echo "Docker is working (via sudo)."
+fi
+
+# ── Verify Docker can actually run ───────────────────────────────────
+# On some container platforms (RunPod, etc.), Docker is installed but
+# can't create networks due to missing kernel capabilities.
+echo "Verifying Docker works..."
+if [ "$USE_SUDO_DOCKER" = "1" ]; then
+    DOCKER_CMD="sudo docker"
+else
+    DOCKER_CMD="docker"
+fi
+
+if $DOCKER_CMD info &>/dev/null 2>&1; then
+    # Docker daemon is running — try starting it if not
+    true
+else
+    # Try to start dockerd (containers won't have systemd)
+    echo "Docker daemon not running, attempting to start..."
+    dockerd &>/dev/null &
+    DOCKERD_PID=$!
+    sleep 3
+
+    if ! $DOCKER_CMD info &>/dev/null 2>&1; then
+        # dockerd failed to start (likely iptables/privilege issue)
+        kill $DOCKERD_PID 2>/dev/null || true
+        wait $DOCKERD_PID 2>/dev/null || true
+        echo ""
+        echo "Docker cannot run on this system (missing kernel capabilities)."
+        echo "The app will be installed directly instead of using Docker containers."
+        echo ""
+        export HAS_DOCKER=0
+    fi
+fi
+
+if [ "$HAS_DOCKER" = "1" ]; then
+    echo "Docker is working."
+else
+    echo "Proceeding without Docker."
 fi
 
 echo ""

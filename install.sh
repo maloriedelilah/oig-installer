@@ -215,13 +215,25 @@ else
     SVCMGR="supervisord"
 fi
 echo "  Services:"
-echo "    App          → Docker (port 80)"
+if [ "$HAS_DOCKER" = "1" ]; then
+    echo "    App          → Docker (port 80)"
+else
+    echo "    Backend      → $SVCMGR (port 8000)"
+    echo "    Caddy        → $SVCMGR (port 80)"
+    echo "    PostgreSQL   → $SVCMGR (port 5432)"
+    echo "    Redis        → $SVCMGR (port 6379)"
+fi
 echo "    ComfyUI      → $SVCMGR (port 8188)"
 echo "    Ollama       → $SVCMGR (port 11434)"
 echo ""
 echo "  Useful commands:"
 echo "    cd $APP_DIR"
-echo "    docker compose logs -f            # app logs"
+if [ "$HAS_DOCKER" = "1" ]; then
+    echo "    docker compose logs -f            # app logs"
+else
+    echo "    tail -f /var/log/oig-backend.log  # backend logs"
+    echo "    tail -f /var/log/caddy.log        # caddy logs"
+fi
 if [ "$HAS_SYSTEMD" = "1" ]; then
     echo "    sudo journalctl -u comfyui -f     # ComfyUI logs"
     echo "    sudo journalctl -u ollama -f      # Ollama logs"

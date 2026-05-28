@@ -1,10 +1,16 @@
 #!/bin/bash
 # ── App Setup ────────────────────────────────────────────────────────
 # Downloads the OIG release tarball, configures .env, sets up swap,
-# builds and starts the Docker stack.
+# builds and starts the app.
+#
+# Two modes:
+#   Docker   (HAS_DOCKER=1) — uses docker compose (bare metal, VPS)
+#   Direct   (HAS_DOCKER=0) — installs services natively (RunPod, containers)
 #
 # Expects these variables from the parent install.sh:
 #   INSTALL_MODE      — "local" or "production"
+#   HAS_DOCKER        — "1" or "0"
+#   HAS_SYSTEMD       — "1" or "0"
 #   OIG_TARBALL_URL   — URL to the release tarball on GitHub Releases
 #   OIG_VERSION       — version string (e.g. "0.1.0")
 set -e
@@ -80,6 +86,15 @@ else
     JWT_SECRET=$(openssl rand -hex 32)
     POSTGRES_PASSWORD=$(openssl rand -hex 32)
 
+    # Service hostnames differ between Docker and direct install
+    if [ "${HAS_DOCKER:-1}" = "1" ]; then
+        COMFY_HOST="host.docker.internal"
+        OLLAMA_HOST="host.docker.internal"
+    else
+        COMFY_HOST="localhost"
+        OLLAMA_HOST="localhost"
+    fi
+
     if [ "$INSTALL_MODE" = "local" ]; then
         # ── Local mode ────────────────────────────────────────────────
         echo ""
@@ -125,8 +140,8 @@ CORS_ORIGIN=http://localhost
 APP_URL=http://localhost
 
 # GPU Services
-COMFYUI_URL=http://host.docker.internal:8188
-LMSTUDIO_URL=http://host.docker.internal:11434
+COMFYUI_URL=http://$COMFY_HOST:8188
+LMSTUDIO_URL=http://$OLLAMA_HOST:11434
 LLM_MODEL=qwen3:8b-nothink
 
 # Admin
@@ -205,8 +220,8 @@ CORS_ORIGIN=https://$DOMAIN
 APP_URL=https://$DOMAIN
 
 # GPU Services
-COMFYUI_URL=http://host.docker.internal:8188
-LMSTUDIO_URL=http://host.docker.internal:11434
+COMFYUI_URL=http://$COMFY_HOST:8188
+LMSTUDIO_URL=http://$OLLAMA_HOST:11434
 LLM_MODEL=qwen3:8b-nothink
 
 # Cloudflare
@@ -226,29 +241,312 @@ EOF
     fi
 fi
 
-# ── Determine compose file if not set (upgrade path) ─────────────────
-if [ -z "$COMPOSE_FILE" ]; then
-    if grep -q "CORS_ORIGIN=http://localhost" "$APP_DIR/.env" 2>/dev/null; then
-        COMPOSE_FILE="docker-compose.local.yml"
-    else
-        COMPOSE_FILE="docker-compose.prod.yml"
-    fi
-fi
-
 # ── Build and start ───────────────────────────────────────────────────
-echo ""
-echo "=== Building and starting services ==="
-echo "This will build the frontend and backend Docker images (may take a few minutes)..."
-echo ""
 
-# Use sudo if user isn't in docker group yet (root never needs sudo)
-if [ "$(id -u)" = "0" ] || groups "$USER" | grep -q docker; then
-    docker compose -f "$COMPOSE_FILE" up -d --build
+if [ "${HAS_DOCKER:-1}" = "1" ]; then
+    # ═══════════════════════════════════════════════════════════════════
+    # Docker path (bare metal, VPS, Linode, etc.)
+    # ═══════════════════════════════════════════════════════════════════
+
+    # Determine compose file if not set (upgrade path)
+    if [ -z "$COMPOSE_FILE" ]; then
+        if grep -q "CORS_ORIGIN=http://localhost" "$APP_DIR/.env" 2>/dev/null; then
+            COMPOSE_FILE="docker-compose.local.yml"
+        else
+            COMPOSE_FILE="docker-compose.prod.yml"
+        fi
+    fi
+
+    echo ""
+    echo "=== Building and starting services (Docker) ==="
+    echo "This will build the frontend and backend Docker images (may take a few minutes)..."
+    echo ""
+
+    # Use sudo if user isn't in docker group yet (root never needs sudo)
+    if [ "$(id -u)" = "0" ] || groups "$USER" | grep -q docker; then
+        docker compose -f "$COMPOSE_FILE" up -d --build
+    else
+        sudo docker compose -f "$COMPOSE_FILE" up -d --build
+    fi
+
 else
-    sudo docker compose -f "$COMPOSE_FILE" up -d --build
+    # ═══════════════════════════════════════════════════════════════════
+    # Direct-install path (RunPod, containers without Docker support)
+    # ═══════════════════════════════════════════════════════════════════
+
+    echo ""
+    echo "=== Installing services directly (no Docker) ==="
+    echo ""
+
+    # Source .env so we can use the credentials
+    set -a
+    source "$APP_DIR/.env"
+    set +a
+
+    # ── PostgreSQL ────────────────────────────────────────────────────
+    if ! command -v psql &>/dev/null; then
+        echo "Installing PostgreSQL..."
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq postgresql postgresql-contrib
+    else
+        echo "PostgreSQL already installed."
+    fi
+
+    # Start PostgreSQL
+    if [ "$HAS_SYSTEMD" = "1" ]; then
+        sudo systemctl start postgresql
+        sudo systemctl enable postgresql
+    else
+        # Start directly (containers)
+        if ! pgrep -x postgres &>/dev/null; then
+            sudo pg_ctlcluster $(pg_lsclusters -h | head -1 | awk '{print $1, $2}') start 2>/dev/null || \
+            sudo -u postgres pg_ctl start -D /var/lib/postgresql/*/main -l /var/log/postgresql/postgresql.log 2>/dev/null || \
+            sudo service postgresql start 2>/dev/null || true
+        fi
+    fi
+
+    # Wait for PostgreSQL to be ready
+    echo "Waiting for PostgreSQL..."
+    for _ in {1..30}; do
+        if sudo -u postgres psql -c "SELECT 1" &>/dev/null; then
+            break
+        fi
+        sleep 1
+    done
+
+    # Create database and user (idempotent)
+    echo "Configuring database..."
+    sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='${POSTGRES_USER}'" | grep -q 1 || \
+        sudo -u postgres psql -c "CREATE USER ${POSTGRES_USER} WITH PASSWORD '${POSTGRES_PASSWORD}';"
+    sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='${POSTGRES_DB}'" | grep -q 1 || \
+        sudo -u postgres psql -c "CREATE DATABASE ${POSTGRES_DB} OWNER ${POSTGRES_USER};"
+    # Ensure password is up to date
+    sudo -u postgres psql -c "ALTER USER ${POSTGRES_USER} WITH PASSWORD '${POSTGRES_PASSWORD}';" 2>/dev/null || true
+
+    echo "PostgreSQL ready."
+
+    # ── Redis ─────────────────────────────────────────────────────────
+    if ! command -v redis-server &>/dev/null; then
+        echo "Installing Redis..."
+        sudo apt-get install -y -qq redis-server
+    else
+        echo "Redis already installed."
+    fi
+
+    if [ "$HAS_SYSTEMD" = "1" ]; then
+        sudo systemctl start redis-server
+        sudo systemctl enable redis-server
+    else
+        if ! pgrep -x redis-server &>/dev/null; then
+            redis-server --daemonize yes
+        fi
+        # Add supervisord config for Redis
+        mkdir -p /etc/supervisor/conf.d
+        cat > /etc/supervisor/conf.d/redis.conf <<REOF
+[program:redis]
+command=redis-server --daemonize no
+user=root
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/redis.log
+stderr_logfile=/var/log/redis.log
+REOF
+    fi
+
+    echo "Redis ready."
+
+    # ── Node.js + Build Frontend ──────────────────────────────────────
+    if ! command -v node &>/dev/null; then
+        echo "Installing Node.js 20..."
+        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+        sudo apt-get install -y -qq nodejs
+    else
+        echo "Node.js already installed: $(node --version)"
+    fi
+
+    echo "Building frontend..."
+    cd "$APP_DIR/app"
+    npm ci --quiet
+    npm run build
+    FRONTEND_DIR="$APP_DIR/app/dist"
+    echo "Frontend built."
+
+    # ── Caddy ─────────────────────────────────────────────────────────
+    if ! command -v caddy &>/dev/null; then
+        echo "Installing Caddy..."
+        sudo apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq caddy
+    else
+        echo "Caddy already installed."
+    fi
+
+    # Write Caddyfile for direct install (proxy to localhost, not Docker service name)
+    if [ "$INSTALL_MODE" = "production" ]; then
+        # Read domain from .env
+        DOMAIN=$(grep "^APP_URL=" "$APP_DIR/.env" | sed 's|APP_URL=https://||')
+        cat > /etc/caddy/Caddyfile <<CEOF
+$DOMAIN {
+	handle /api/* {
+		uri strip_prefix /api
+		reverse_proxy localhost:${BACKEND_PORT:-8000}
+	}
+
+	handle {
+		root * $FRONTEND_DIR
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+}
+CEOF
+    else
+        cat > /etc/caddy/Caddyfile <<CEOF
+:80 {
+	handle /api/* {
+		uri strip_prefix /api
+		reverse_proxy localhost:${BACKEND_PORT:-8000}
+	}
+
+	handle {
+		root * $FRONTEND_DIR
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+}
+CEOF
+    fi
+
+    # Start/restart Caddy
+    if [ "$HAS_SYSTEMD" = "1" ]; then
+        sudo systemctl restart caddy
+        sudo systemctl enable caddy
+    else
+        # Kill existing Caddy if running
+        pkill caddy 2>/dev/null || true
+        sleep 1
+        mkdir -p /etc/supervisor/conf.d
+        cat > /etc/supervisor/conf.d/caddy.conf <<CEOF
+[program:caddy]
+command=caddy run --config /etc/caddy/Caddyfile
+user=root
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/caddy.log
+stderr_logfile=/var/log/caddy.log
+CEOF
+    fi
+
+    echo "Caddy configured."
+
+    # ── Backend (Python) ──────────────────────────────────────────────
+    echo "Setting up backend..."
+    cd "$APP_DIR/api"
+
+    if [ ! -d "venv" ]; then
+        python3 -m venv venv
+    fi
+
+    source venv/bin/activate
+    pip install --quiet -r requirements.txt
+
+    # Set DATABASE_URL for direct Postgres (localhost, not Docker service name)
+    export DATABASE_URL="postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}"
+    export REDIS_URL="redis://localhost:6379/0"
+
+    # Run migrations
+    echo "Running database migrations..."
+    alembic upgrade head
+
+    deactivate
+
+    # Create backend startup script
+    cat > "$APP_DIR/api/start.sh" <<BEOF
+#!/bin/bash
+cd $APP_DIR/api
+source venv/bin/activate
+
+# Load .env
+set -a
+source $APP_DIR/.env
+set +a
+
+# Override Docker-style URLs for direct install
+export DATABASE_URL="postgresql+asyncpg://\${POSTGRES_USER}:\${POSTGRES_PASSWORD}@localhost:5432/\${POSTGRES_DB}"
+export REDIS_URL="redis://localhost:6379/0"
+export ENV=production
+
+# Run migrations then start
+alembic upgrade head
+exec uvicorn app.main:app --host 0.0.0.0 --port \${BACKEND_PORT:-8000} --workers \${WORKERS:-2}
+BEOF
+    chmod +x "$APP_DIR/api/start.sh"
+
+    # ── Supervisord configs for backend ───────────────────────────────
+    if [ "$HAS_SYSTEMD" = "1" ]; then
+        cat <<SEOF | sudo tee /etc/systemd/system/oig-backend.service >/dev/null
+[Unit]
+Description=OIG Backend
+After=network.target postgresql.service redis-server.service
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=$APP_DIR/api
+ExecStart=$APP_DIR/api/start.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+SEOF
+        sudo systemctl daemon-reload
+        sudo systemctl enable oig-backend
+        sudo systemctl start oig-backend
+    else
+        mkdir -p /etc/supervisor/conf.d
+        cat > /etc/supervisor/conf.d/oig-backend.conf <<SEOF
+[program:oig-backend]
+command=$APP_DIR/api/start.sh
+directory=$APP_DIR/api
+user=$USER
+autostart=true
+autorestart=true
+startsecs=5
+startretries=3
+stdout_logfile=/var/log/oig-backend.log
+stderr_logfile=/var/log/oig-backend.log
+SEOF
+    fi
+
+    echo "Backend configured."
+
+    # ── Start all supervisord services ────────────────────────────────
+    if [ "$HAS_SYSTEMD" != "1" ]; then
+        if ! pgrep -x supervisord &>/dev/null; then
+            supervisord -c /etc/supervisor/supervisord.conf 2>/dev/null || true
+        fi
+        supervisorctl reread 2>/dev/null || true
+        supervisorctl update 2>/dev/null || true
+    fi
+
 fi
 
-# Wait for backend to be healthy
+# ── Wait for backend to be healthy ────────────────────────────────────
 echo ""
 echo "Waiting for backend to start..."
 for _ in {1..60}; do
