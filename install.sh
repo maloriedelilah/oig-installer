@@ -53,6 +53,13 @@ fail() {
 
 banner
 
+# ── Ensure stdin reads from the terminal ─────────────────────────────
+# When run via "curl | bash", stdin is the pipe. Redirect to /dev/tty
+# so interactive prompts work.
+if [ ! -t 0 ] && [ -e /dev/tty ]; then
+    exec </dev/tty
+fi
+
 # ── Pre-flight checks ───────────────────────────────────────────────
 if [ "$(uname)" != "Linux" ]; then
     fail "This installer only supports Linux."
@@ -131,6 +138,10 @@ fi
 echo ""
 echo "The Flux 2 Klein 9B model requires a Hugging Face token (non-commercial license)."
 echo "Klein 4B and Z-Image Turbo are available without one."
+echo ""
+echo "  To use Klein 9B:"
+echo "    1. Accept the license: https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8"
+echo "    2. Get your token:     https://huggingface.co/settings/tokens"
 echo ""
 read -p "Hugging Face token (press Enter to skip): " HF_INPUT
 export HF_TOKEN="${HF_INPUT:-}"
