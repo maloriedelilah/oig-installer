@@ -58,6 +58,12 @@ if [ "$(uname)" != "Linux" ]; then
     fail "This installer only supports Linux."
 fi
 
+# Ensure $USER is set (empty on some minimal installs / root shells)
+if [ -z "$USER" ]; then
+    USER=$(whoami)
+    export USER
+fi
+
 if ! sudo -v 2>/dev/null; then
     fail "This installer requires sudo access."
 fi

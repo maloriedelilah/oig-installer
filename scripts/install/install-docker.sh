@@ -26,7 +26,14 @@ else
 fi
 
 # Ensure the current user can use Docker without sudo
-if ! groups "$USER" | grep -q docker; then
+# (root can always use Docker, so skip the group check)
+if [ "$(id -u)" = "0" ]; then
+    USE_SUDO_DOCKER=0
+    docker info &>/dev/null && echo "Docker is working."
+elif groups "$USER" | grep -q docker; then
+    USE_SUDO_DOCKER=0
+    docker info &>/dev/null && echo "Docker is working."
+else
     echo "Adding $USER to docker group..."
     sudo usermod -aG docker "$USER"
     echo ""
@@ -34,15 +41,7 @@ if ! groups "$USER" | grep -q docker; then
     echo "The installer will use sudo for docker commands in this session."
     echo ""
     USE_SUDO_DOCKER=1
-else
-    USE_SUDO_DOCKER=0
-fi
-
-# Verify
-if [ "$USE_SUDO_DOCKER" = "1" ]; then
     sudo docker info &>/dev/null && echo "Docker is working (via sudo)."
-else
-    docker info &>/dev/null && echo "Docker is working."
 fi
 
 echo ""

@@ -238,8 +238,8 @@ echo "=== Building and starting services ==="
 echo "This will build the frontend and backend Docker images (may take a few minutes)..."
 echo ""
 
-# Use sudo if user isn't in docker group yet
-if groups "$USER" | grep -q docker; then
+# Use sudo if user isn't in docker group yet (root never needs sudo)
+if [ "$(id -u)" = "0" ] || groups "$USER" | grep -q docker; then
     docker compose -f "$COMPOSE_FILE" up -d --build
 else
     sudo docker compose -f "$COMPOSE_FILE" up -d --build
