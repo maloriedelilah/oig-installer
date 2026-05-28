@@ -35,7 +35,7 @@ bash install.sh
 Or as a one-liner:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/maloriedelilah/oig-installer/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/maloriedelilah/oig-installer/main/install.sh -o /tmp/oig-install.sh && bash /tmp/oig-install.sh
 ```
 
 The installer will walk you through a few prompts:

@@ -125,7 +125,7 @@ bash install.sh
 
 Or one-liner:
 \`\`\`bash
-curl -fsSL https://raw.githubusercontent.com/maloriedelilah/oig-installer/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/maloriedelilah/oig-installer/main/install.sh -o /tmp/oig-install.sh && bash /tmp/oig-install.sh
 \`\`\`"
 
 # Clean up the local tarball
@@ -136,4 +136,4 @@ echo "=== Release ${TAG} published ==="
 echo "https://github.com/maloriedelilah/oig-installer/releases/tag/${TAG}"
 echo ""
 echo "Users can now install with:"
-echo "  curl -fsSL https://raw.githubusercontent.com/maloriedelilah/oig-installer/main/install.sh | bash"
+echo "  curl -fsSL https://raw.githubusercontent.com/maloriedelilah/oig-installer/main/install.sh -o /tmp/oig-install.sh && bash /tmp/oig-install.sh"
