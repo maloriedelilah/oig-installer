@@ -149,7 +149,7 @@ echo ""
 echo "  To use Klein 9B:"
 echo "    1. Accept the license: https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8"
 echo "    2. Create a token:     https://huggingface.co/settings/tokens"
-echo "       (a basic Read token works — no special permissions needed)"
+echo "       Select: 'Read access to contents of all public gated repos you can access'"
 echo ""
 read -p "Hugging Face token (press Enter to skip): " HF_INPUT
 export HF_TOKEN="${HF_INPUT:-}"

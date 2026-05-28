@@ -41,7 +41,7 @@ curl -fsSL https://raw.githubusercontent.com/maloriedelilah/oig-installer/main/i
 The installer will walk you through a few prompts:
 
 1. **Local or Production** — local mode runs on `http://localhost` with no domain needed. Production mode sets up HTTPS with your own domain via Cloudflare.
-2. **Hugging Face token** (optional) — needed for the Flux 2 Klein 9B model, which has a non-commercial license. The other two models don't require one.
+2. **Hugging Face token** (optional) — needed for the Flux 2 Klein 9B model, which has a non-commercial license. The other two models don't require one. When creating the token, select "Read access to contents of all public gated repos you can access."
 3. **Admin account** — email, username, and password for your first admin user.
 
 The whole process takes about 10–20 minutes depending on your internet speed (the models are several GB each).
@@ -98,13 +98,14 @@ bash install.sh
 If you skipped the Klein 9B model during installation, you can add it anytime:
 
 1. Accept the license at [huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8](https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8)
-2. Download the model:
+2. Create a token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) with "Read access to contents of all public gated repos you can access" selected
+3. Download the model:
    ```bash
    wget --header="Authorization: Bearer YOUR_HF_TOKEN" \
      -O /opt/ComfyUI/models/diffusion_models/flux-2-klein-base-9b-fp8.safetensors \
      https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8/resolve/main/flux-2-klein-base-9b-fp8.safetensors
    ```
-3. Restart ComfyUI: `sudo systemctl restart comfyui`
+4. Restart ComfyUI: `sudo systemctl restart comfyui`
 
 ## Models
 
