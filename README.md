@@ -122,3 +122,5 @@ These are configured through the admin UI after installation — no .env changes
 ## License
 
 Open Image Generator is open source under the MIT License. Individual AI models have their own licenses — see the models table above.
+
+![Project Logo](oig-logo.png)
