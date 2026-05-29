@@ -38,6 +38,18 @@ if [ -d "$APP_DIR" ] && [ -f "$APP_DIR/.oig-version" ]; then
         rm -f "$TMP_TAR"
         echo "$OIG_VERSION" > "$APP_DIR/.oig-version"
         echo "Upgrade extracted."
+
+        # Restart services to pick up new code/models
+        echo "Restarting services..."
+        if [ "$HAS_SYSTEMD" = "1" ]; then
+            sudo systemctl restart oig-backend 2>/dev/null || true
+            sudo systemctl restart caddy 2>/dev/null || true
+            sudo systemctl restart comfyui 2>/dev/null || true
+        else
+            supervisorctl restart oig-backend 2>/dev/null || true
+            supervisorctl restart caddy 2>/dev/null || true
+            supervisorctl restart comfyui 2>/dev/null || true
+        fi
     fi
 else
     echo "Downloading OIG v${OIG_VERSION}..."

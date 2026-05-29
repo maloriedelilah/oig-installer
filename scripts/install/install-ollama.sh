@@ -114,5 +114,10 @@ MODELFILE
 ollama create qwen3:8b-nothink -f /tmp/Modelfile
 rm -f /tmp/Modelfile
 
+# Pull a vision model for image safety screening (img2img uploads)
+echo ""
+echo "Pulling llava:7b vision model for image safety screening..."
+ollama pull llava:7b
+
 echo "Ollama is ready."
 echo ""
