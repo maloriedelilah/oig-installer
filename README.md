@@ -1,3 +1,5 @@
+![Project Logo](oig-logo.png)
+
 # Open Image Generator
 
 A self-hosted image generation app with a clean, Midjourney-style web interface. It wraps [ComfyUI](https://github.com/comfyanonymous/ComfyUI) behind a simple UI — type a prompt, get images. No node graphs, no workflow files, no fuss.
@@ -123,4 +125,3 @@ These are configured through the admin UI after installation — no .env changes
 
 Open Image Generator is open source under the MIT License. Individual AI models have their own licenses — see the models table above.
 
-![Project Logo](oig-logo.png)
