@@ -134,9 +134,15 @@ if [ -f "$APP_DIR/.env" ] && [ -f "$APP_DIR/.oig-version" ]; then
     fi
     echo -e "Mode: ${BOLD}${INSTALL_MODE^}${NC} (from existing config)"
 
-    # Reuse existing HF token if present
-    HF_EXISTING=$(grep "^HF_TOKEN=" "$APP_DIR/.env" 2>/dev/null | cut -d= -f2 || true)
-    export HF_TOKEN="${HF_EXISTING:-}"
+    # Reuse saved HF token if present
+    if [ -f "$APP_DIR/.hf-token" ]; then
+        export HF_TOKEN=$(cat "$APP_DIR/.hf-token" | tr -d '[:space:]')
+        if [ -n "$HF_TOKEN" ]; then
+            echo -e "Hugging Face token: ${GREEN}loaded from previous install${NC}"
+        fi
+    else
+        export HF_TOKEN=""
+    fi
 else
     # ── Fresh install — prompt for config ────────────────────────────
     echo ""
@@ -176,6 +182,12 @@ else
     else
         echo -e "Klein 9B: ${YELLOW}skipped${NC} (you can add it later)"
     fi
+fi
+
+# Save HF token for future upgrades (if provided)
+if [ -n "$HF_TOKEN" ]; then
+    echo "$HF_TOKEN" > "$APP_DIR/.hf-token" 2>/dev/null || true
+    chmod 600 "$APP_DIR/.hf-token" 2>/dev/null || true
 fi
 
 # ═══════════════════════════════════════════════════════════════════
