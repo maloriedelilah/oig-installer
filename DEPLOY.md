@@ -1,4 +1,6 @@
-# Production Deployment Guide — Linode GPU VPS
+# Production Deployment Guide — Linode GPU VPS (Legacy)
+
+> **Note:** This is a manual deployment guide from before the one-command installer existed. For new deployments, use `bash install.sh` instead — it handles everything described here automatically. See [README.md](README.md) and [docs/BARE-METAL.md](docs/BARE-METAL.md) for current instructions.
 
 ## Architecture
 
