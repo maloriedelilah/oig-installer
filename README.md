@@ -82,8 +82,8 @@ The installer sets up these components, adapting to the environment:
 | Model | Size | Speed | License | Notes |
 |-------|------|-------|---------|-------|
 | Flux 2 Klein 9B | 9.6 GB | Slower | Non-commercial | Highest quality, requires HF token |
-| Flux 2 Klein 4B | 7.8 GB | Medium | Apache 2.0 | Good balance of quality and speed |
-| Z-Image Turbo | 5.5 GB | Fastest | Apache 2.0 | Great for quick iterations |
+| Flux 2 Klein 4B | 7.8 GB | Medium | Apache 2.0 | Good at realism, can fail on body accuracy |
+| Z-Image Turbo | 5.5 GB | Fastest | Apache 2.0 | Good balance of quality and speed |
 
 ### Adding the Klein 9B Model Later
 
