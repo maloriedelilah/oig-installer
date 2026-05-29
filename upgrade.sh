@@ -2,7 +2,8 @@
 # ── Open Image Generator — Upgrade Script ─────────────────────────────
 #
 # Usage:
-#   bash upgrade.sh
+#   bash upgrade.sh              # upgrade to latest version
+#   bash upgrade.sh --force      # reinstall even if already on latest
 #   — or remotely —
 #   curl -fsSL https://raw.githubusercontent.com/maloriedelilah/oig-installer/main/upgrade.sh -o /tmp/oig-upgrade.sh && bash /tmp/oig-upgrade.sh
 #
@@ -13,6 +14,14 @@
 #   • Re-runs the installer (idempotent — skips already-installed deps)
 #
 set -e
+
+# ── Parse flags ──────────────────────────────────────────────────────
+FORCE=0
+for arg in "$@"; do
+    case "$arg" in
+        --force|-f) FORCE=1 ;;
+    esac
+done
 
 # ── Colours ──────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -55,11 +64,17 @@ fi
 
 echo -e "Latest version:    ${BOLD}v${LATEST_VERSION}${NC}"
 
-if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
+if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ] && [ "$FORCE" = "0" ]; then
     echo ""
     echo -e "${GREEN}Already up to date!${NC} No upgrade needed."
+    echo -e "  (use ${BOLD}--force${NC} to reinstall the current version)"
     echo ""
     exit 0
+fi
+
+if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ] && [ "$FORCE" = "1" ]; then
+    echo ""
+    echo -e "${YELLOW}Force reinstalling v${CURRENT_VERSION}${NC}"
 fi
 
 echo ""
