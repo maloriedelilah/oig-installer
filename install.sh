@@ -251,6 +251,14 @@ else
 fi
 echo ""
 
+# Copy upgrade script to app directory so it's always available
+if [ -f "$SCRIPT_DIR/upgrade.sh" ]; then
+    cp "$SCRIPT_DIR/upgrade.sh" "$APP_DIR/upgrade.sh"
+    chmod +x "$APP_DIR/upgrade.sh"
+    echo "  Upgrade later:  bash $APP_DIR/upgrade.sh"
+    echo ""
+fi
+
 # Clean up temp clone if we made one
 if [ -n "$TMP_CLONE_DIR" ] && [ -d "$TMP_CLONE_DIR" ]; then
     rm -rf "$TMP_CLONE_DIR"
