@@ -1,4 +1,4 @@
-![Project Logo](oig-logo.png)
+![Project Logo](oig-logo-slim.png)
 
 # Open Image Generator
 
