@@ -38,18 +38,7 @@ if [ -d "$APP_DIR" ] && [ -f "$APP_DIR/.oig-version" ]; then
         rm -f "$TMP_TAR"
         echo "$OIG_VERSION" > "$APP_DIR/.oig-version"
         echo "Upgrade extracted."
-
-        # Restart services to pick up new code/models
-        echo "Restarting services..."
-        if [ "$HAS_SYSTEMD" = "1" ]; then
-            sudo systemctl restart oig-backend 2>/dev/null || true
-            sudo systemctl restart caddy 2>/dev/null || true
-            sudo systemctl restart comfyui 2>/dev/null || true
-        else
-            supervisorctl restart oig-backend 2>/dev/null || true
-            supervisorctl restart caddy 2>/dev/null || true
-            supervisorctl restart comfyui 2>/dev/null || true
-        fi
+        export OIG_UPGRADING=1
     fi
 else
     echo "Downloading OIG v${OIG_VERSION}..."
@@ -611,6 +600,22 @@ TEOF
         fi
         supervisorctl reread 2>/dev/null || true
         supervisorctl update 2>/dev/null || true
+
+        # On upgrade, restart services to pick up new code/models
+        if [ "${OIG_UPGRADING:-0}" = "1" ]; then
+            echo "Restarting services for upgrade..."
+            supervisorctl restart oig-backend 2>/dev/null || true
+            supervisorctl restart caddy 2>/dev/null || true
+            supervisorctl restart comfyui 2>/dev/null || true
+        fi
+    else
+        # systemd — restart on upgrade
+        if [ "${OIG_UPGRADING:-0}" = "1" ]; then
+            echo "Restarting services for upgrade..."
+            sudo systemctl restart oig-backend 2>/dev/null || true
+            sudo systemctl restart caddy 2>/dev/null || true
+            sudo systemctl restart comfyui 2>/dev/null || true
+        fi
     fi
 
 fi
@@ -618,13 +623,26 @@ fi
 # ── Wait for backend to be healthy ────────────────────────────────────
 echo ""
 echo "Waiting for backend to start..."
+BACKEND_READY=0
 for _ in {1..60}; do
     if curl -sf http://localhost/api/health &>/dev/null || \
        curl -sf http://localhost:80/api/health &>/dev/null; then
         echo "Backend is up!"
+        BACKEND_READY=1
         break
     fi
     sleep 2
 done
+
+if [ "$BACKEND_READY" = "0" ]; then
+    echo ""
+    echo "WARNING: Backend hasn't responded after 2 minutes."
+    if [ "$HAS_SYSTEMD" = "1" ]; then
+        echo "Check logs: sudo journalctl -u oig-backend -f"
+    else
+        echo "Check logs: tail -f /var/log/oig-backend.log"
+    fi
+    echo ""
+fi
 
 echo ""
