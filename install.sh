@@ -121,43 +121,61 @@ OIG_TARBALL_URL="https://github.com/$INSTALLER_REPO/releases/download/v${OIG_VER
 export OIG_TARBALL_URL
 export OIG_VERSION
 
-# ── Choose install mode ──────────────────────────────────────────────
-echo ""
-echo "How would you like to deploy?"
-echo ""
-echo "  1) Local mode   — HTTP only at http://localhost (no domain needed)"
-echo "  2) Production   — HTTPS with your own domain via Cloudflare"
-echo ""
-read -p "Choose [1]: " MODE_CHOICE
-MODE_CHOICE="${MODE_CHOICE:-1}"
-
-if [ "$MODE_CHOICE" = "2" ]; then
-    export INSTALL_MODE="production"
+# ── Detect existing install or prompt for config ────────────────────
+if [ -f "$APP_DIR/.env" ] && [ -f "$APP_DIR/.oig-version" ]; then
+    # ── Upgrade path — detect mode from existing .env ────────────────
+    echo -e "${BOLD}Existing installation detected — upgrading.${NC}"
     echo ""
-    echo -e "Mode: ${BOLD}Production${NC}"
+
+    if grep -q "CORS_ORIGIN=http://localhost" "$APP_DIR/.env" 2>/dev/null; then
+        export INSTALL_MODE="local"
+    else
+        export INSTALL_MODE="production"
+    fi
+    echo -e "Mode: ${BOLD}${INSTALL_MODE^}${NC} (from existing config)"
+
+    # Reuse existing HF token if present
+    HF_EXISTING=$(grep "^HF_TOKEN=" "$APP_DIR/.env" 2>/dev/null | cut -d= -f2 || true)
+    export HF_TOKEN="${HF_EXISTING:-}"
 else
-    export INSTALL_MODE="local"
+    # ── Fresh install — prompt for config ────────────────────────────
     echo ""
-    echo -e "Mode: ${BOLD}Local${NC}"
-fi
+    echo "How would you like to deploy?"
+    echo ""
+    echo "  1) Local mode   — HTTP only at http://localhost (no domain needed)"
+    echo "  2) Production   — HTTPS with your own domain via Cloudflare"
+    echo ""
+    read -p "Choose [1]: " MODE_CHOICE
+    MODE_CHOICE="${MODE_CHOICE:-1}"
 
-# ── Optional: Hugging Face token for Klein 9B ────────────────────────
-echo ""
-echo "The Flux 2 Klein 9B model requires a Hugging Face token (non-commercial license)."
-echo "Klein 4B and Z-Image Turbo are available without one."
-echo ""
-echo "  To use Klein 9B:"
-echo "    1. Accept the license: https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8"
-echo "    2. Create a token:     https://huggingface.co/settings/tokens"
-echo "       Select: 'Read access to contents of all public gated repos you can access'"
-echo ""
-read -p "Hugging Face token (press Enter to skip): " HF_INPUT
-export HF_TOKEN="${HF_INPUT:-}"
+    if [ "$MODE_CHOICE" = "2" ]; then
+        export INSTALL_MODE="production"
+        echo ""
+        echo -e "Mode: ${BOLD}Production${NC}"
+    else
+        export INSTALL_MODE="local"
+        echo ""
+        echo -e "Mode: ${BOLD}Local${NC}"
+    fi
 
-if [ -n "$HF_TOKEN" ]; then
-    echo -e "Klein 9B: ${GREEN}will be downloaded${NC}"
-else
-    echo -e "Klein 9B: ${YELLOW}skipped${NC} (you can add it later)"
+    # ── Optional: Hugging Face token for Klein 9B ────────────────────
+    echo ""
+    echo "The Flux 2 Klein 9B model requires a Hugging Face token (non-commercial license)."
+    echo "Klein 4B and Z-Image Turbo are available without one."
+    echo ""
+    echo "  To use Klein 9B:"
+    echo "    1. Accept the license: https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8"
+    echo "    2. Create a token:     https://huggingface.co/settings/tokens"
+    echo "       Select: 'Read access to contents of all public gated repos you can access'"
+    echo ""
+    read -p "Hugging Face token (press Enter to skip): " HF_INPUT
+    export HF_TOKEN="${HF_INPUT:-}"
+
+    if [ -n "$HF_TOKEN" ]; then
+        echo -e "Klein 9B: ${GREEN}will be downloaded${NC}"
+    else
+        echo -e "Klein 9B: ${YELLOW}skipped${NC} (you can add it later)"
+    fi
 fi
 
 # ═══════════════════════════════════════════════════════════════════

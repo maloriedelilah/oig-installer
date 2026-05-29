@@ -139,6 +139,7 @@ ls -dt "$BACKUP_DIR"/rollback-v* 2>/dev/null | tail -n +4 | xargs rm -rf 2>/dev/
 echo ""
 echo -e "${BOLD}Running installer...${NC}"
 echo ""
+export OIG_UPGRADING=1
 curl -fsSL "https://raw.githubusercontent.com/$INSTALLER_REPO/$INSTALLER_BRANCH/install.sh" -o /tmp/oig-install.sh && bash /tmp/oig-install.sh
 
 # ── Post-upgrade summary ─────────────────────────────────────────────
