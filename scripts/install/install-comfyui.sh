@@ -81,6 +81,14 @@ else
     echo "  Comfyui-DiffusersUtils already installed."
 fi
 
+# OIG custom nodes (shipped with the app, not cloned from git)
+if [ -d "/opt/oig/comfy-nodes/oig-nodes" ]; then
+    echo "  Installing OIG custom nodes..."
+    cp -r /opt/oig/comfy-nodes/oig-nodes "$COMFY_DIR/custom_nodes/oig-nodes"
+else
+    echo "  OIG custom nodes not found (will be installed on next upgrade)."
+fi
+
 # Install custom node dependencies
 cd "$COMFY_DIR"
 source venv/bin/activate
@@ -97,6 +105,7 @@ pip install --quiet git+https://github.com/huggingface/transformers.git 2>/dev/n
 pip install --quiet git+https://github.com/huggingface/diffusers.git 2>/dev/null || true
 pip install --quiet git+https://github.com/huggingface/peft.git 2>/dev/null || true
 pip install --quiet huggingface-hub 2>/dev/null || true
+pip install --quiet bitsandbytes 2>/dev/null || true
 
 # ── Download Models ───────────────────────────────────────────────────
 echo ""

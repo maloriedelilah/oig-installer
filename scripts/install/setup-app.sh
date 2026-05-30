@@ -443,6 +443,8 @@ CEOF
 
     source venv/bin/activate
     pip install --quiet -r requirements.txt
+    # Ensure huggingface-hub is available for model downloads via admin UI
+    pip install --quiet huggingface-hub 2>/dev/null || true
 
     # Set DATABASE_URL for direct Postgres (localhost, not Docker service name)
     export DATABASE_URL="postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}"

@@ -88,23 +88,18 @@ if pidof systemd &>/dev/null && command -v systemctl &>/dev/null; then
     export HAS_SYSTEMD=1
 fi
 
-# Refresh package lists early — stale repos on template images cause failures later
+# Refresh package lists and upgrade early — stale repos and outdated packages
+# on template images cause failures later in the install.
 echo "Updating package lists..."
-if ! sudo apt-get update -qq 2>&1 | tee /tmp/apt-update.log | grep -q "^E:"; then
-    echo "  Package lists updated."
-else
-    echo -e "${YELLOW}Warning: apt-get update had errors. Attempting to fix...${NC}"
-    # Remove known stale third-party repos
+sudo apt-get update || {
+    echo -e "${YELLOW}Warning: apt-get update had errors. Removing stale repos and retrying...${NC}"
     sudo rm -f /etc/apt/sources.list.d/docker.list 2>/dev/null
-    # Fix broken Ubuntu repos (common on older template images)
-    if grep -q "noble" /etc/apt/sources.list 2>/dev/null; then
-        echo "  Refreshing Ubuntu Noble sources..."
-        sudo sed -i 's|http://security.ubuntu.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list 2>/dev/null
-        sudo sed -i 's|http://archive.ubuntu.com/ubuntu noble-security|http://security.ubuntu.com/ubuntu noble-security|g' /etc/apt/sources.list 2>/dev/null
-    fi
-    sudo apt-get update -qq 2>/dev/null || echo -e "${YELLOW}Some repos may still have issues — continuing anyway.${NC}"
-fi
-rm -f /tmp/apt-update.log
+    sudo apt-get update || echo -e "${YELLOW}Some repos may still have issues — continuing anyway.${NC}"
+}
+
+echo ""
+echo "Upgrading system packages..."
+sudo apt-get upgrade -y
 
 # ── Determine script directory ───────────────────────────────────────
 # If run from inside the cloned installer repo, use local scripts.
