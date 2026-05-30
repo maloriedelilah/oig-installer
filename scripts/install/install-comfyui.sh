@@ -74,6 +74,13 @@ else
     echo "  Plush-for-ComfyUI already installed."
 fi
 
+if [ ! -d "Comfyui-DiffusersUtils" ]; then
+    echo "  Cloning Comfyui-DiffusersUtils (GLM-Image support)..."
+    git clone https://github.com/lrzjason/Comfyui-DiffusersUtils.git
+else
+    echo "  Comfyui-DiffusersUtils already installed."
+fi
+
 # Install custom node dependencies
 cd "$COMFY_DIR"
 source venv/bin/activate
@@ -83,6 +90,13 @@ for req in custom_nodes/*/requirements.txt; do
         pip install --quiet -r "$req" 2>/dev/null || true
     fi
 done
+
+# DiffusersUtils requires bleeding-edge transformers/diffusers/peft from git
+echo "  Installing DiffusersUtils extra deps (transformers, diffusers, peft)..."
+pip install --quiet git+https://github.com/huggingface/transformers.git 2>/dev/null || true
+pip install --quiet git+https://github.com/huggingface/diffusers.git 2>/dev/null || true
+pip install --quiet git+https://github.com/huggingface/peft.git 2>/dev/null || true
+pip install --quiet huggingface-hub 2>/dev/null || true
 
 # ── Download Models ───────────────────────────────────────────────────
 echo ""
