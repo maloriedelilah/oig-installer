@@ -88,6 +88,13 @@ else
     echo "  ComfyUI-KJNodes already installed."
 fi
 
+if [ ! -d "ComfyUI-LTXVideo" ]; then
+    echo "  Cloning ComfyUI-LTXVideo (video generation support)..."
+    git clone https://github.com/Lightricks/ComfyUI-LTXVideo.git
+else
+    echo "  ComfyUI-LTXVideo already installed."
+fi
+
 # OIG custom nodes (shipped with the app, not cloned from git)
 if [ -d "/opt/oig/comfy-nodes/oig-nodes" ]; then
     echo "  Installing OIG custom nodes..."
