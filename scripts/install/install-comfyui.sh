@@ -96,6 +96,13 @@ else
 fi
 # LTXVideo requires newer kornia than what ships with ComfyUI
 pip install --quiet --upgrade kornia opencv-python 2>/dev/null || true
+# Fix kornia missing 'pad' export in pyramid module (upstream bug)
+PYRAMID_BLEND="$COMFY_DIR/custom_nodes/ComfyUI-LTXVideo/pyramid_blending.py"
+if [ -f "$PYRAMID_BLEND" ] && grep -q "from kornia.*import.*pad" "$PYRAMID_BLEND"; then
+    echo "  Patching LTXVideo kornia compatibility..."
+    sed -i 's/    pad,//' "$PYRAMID_BLEND"
+    sed -i '/from torch import Tensor/a\pad = F.pad' "$PYRAMID_BLEND"
+fi
 
 # OIG custom nodes (shipped with the app, not cloned from git)
 if [ -d "/opt/oig/comfy-nodes/oig-nodes" ]; then
