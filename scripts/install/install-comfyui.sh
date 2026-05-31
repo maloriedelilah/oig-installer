@@ -81,6 +81,13 @@ else
     echo "  Comfyui-DiffusersUtils already installed."
 fi
 
+if [ ! -d "ComfyUI-KJNodes" ]; then
+    echo "  Cloning ComfyUI-KJNodes (outpainting support)..."
+    git clone https://github.com/kijai/ComfyUI-KJNodes.git
+else
+    echo "  ComfyUI-KJNodes already installed."
+fi
+
 # OIG custom nodes (shipped with the app, not cloned from git)
 if [ -d "/opt/oig/comfy-nodes/oig-nodes" ]; then
     echo "  Installing OIG custom nodes..."
