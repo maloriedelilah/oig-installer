@@ -94,6 +94,8 @@ if [ ! -d "ComfyUI-LTXVideo" ]; then
 else
     echo "  ComfyUI-LTXVideo already installed."
 fi
+# LTXVideo requires newer kornia than what ships with ComfyUI
+pip install --quiet --upgrade kornia opencv-python 2>/dev/null || true
 
 # OIG custom nodes (shipped with the app, not cloned from git)
 if [ -d "/opt/oig/comfy-nodes/oig-nodes" ]; then
