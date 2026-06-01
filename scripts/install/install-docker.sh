@@ -7,6 +7,14 @@ echo "=== Installing Docker ==="
 # Default: assume Docker will work
 export HAS_DOCKER=1
 
+# Detect WSL — skip Docker entirely, use direct install
+if grep -qi microsoft /proc/version 2>/dev/null; then
+    echo "WSL detected — skipping Docker (use direct install instead)."
+    export HAS_DOCKER=0
+    echo ""
+    return 0 2>/dev/null || exit 0
+fi
+
 if command -v docker &>/dev/null; then
     echo "Docker is already installed: $(docker --version)"
 
