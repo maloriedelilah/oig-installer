@@ -402,8 +402,8 @@ REOF
     fi
 
     # Write Caddyfile — always plain HTTP (Cloudflare Tunnel or direct access)
-    mkdir -p /etc/caddy
-    cat > /etc/caddy/Caddyfile <<CEOF
+    sudo mkdir -p /etc/caddy
+    sudo tee /etc/caddy/Caddyfile > /dev/null <<CEOF
 :80 {
 	handle /api/* {
 		uri strip_prefix /api

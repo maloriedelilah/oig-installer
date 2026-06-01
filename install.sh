@@ -100,6 +100,7 @@ sudo apt-get update || {
 echo ""
 echo "Upgrading system packages..."
 sudo apt-get upgrade -y
+sudo apt-get install -y -qq zstd curl wget git
 
 # ── Determine script directory ───────────────────────────────────────
 # If run from inside the cloned installer repo, use local scripts.
