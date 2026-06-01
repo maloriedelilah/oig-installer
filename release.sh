@@ -79,6 +79,8 @@ tar -cf - -C "$OIG_SOURCE" \
     --exclude='.mypy_cache' \
     --exclude='*.pyc' \
     --exclude='*.tar.gz' \
+    --exclude='api/showcase' \
+    --exclude='api/branding' \
     --exclude='scripts/install' \
     --exclude='install.sh' \
     --exclude='setup-deploy-key.sh' \

@@ -32,10 +32,23 @@ if [ -d "$APP_DIR" ] && [ -f "$APP_DIR/.oig-version" ]; then
         echo "Downloading release tarball..."
         TMP_TAR=$(mktemp)
         wget --quiet --show-progress -O "$TMP_TAR" "$OIG_TARBALL_URL"
-        # Preserve .env and postgres data across upgrades
+        # Preserve .env, postgres data, showcase images, and branding across upgrades
+        if [ -d "$APP_DIR/api/showcase" ]; then
+            cp -a "$APP_DIR/api/showcase" /tmp/oig-showcase-backup
+        fi
+        if [ -d "$APP_DIR/api/branding" ]; then
+            cp -a "$APP_DIR/api/branding" /tmp/oig-branding-backup
+        fi
         sudo rm -rf "$APP_DIR/api" "$APP_DIR/app" "$APP_DIR/Caddyfile"* "$APP_DIR/Dockerfile"* "$APP_DIR/docker-compose"*
         tar -xzf "$TMP_TAR" -C "$APP_DIR" --strip-components=1
         rm -f "$TMP_TAR"
+        # Restore showcase and branding
+        if [ -d /tmp/oig-showcase-backup ]; then
+            mv /tmp/oig-showcase-backup "$APP_DIR/api/showcase"
+        fi
+        if [ -d /tmp/oig-branding-backup ]; then
+            mv /tmp/oig-branding-backup "$APP_DIR/api/branding"
+        fi
         echo "$OIG_VERSION" > "$APP_DIR/.oig-version"
         echo "Upgrade extracted."
         export OIG_UPGRADING=1
