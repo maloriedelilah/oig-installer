@@ -81,6 +81,13 @@ else
     echo "  Comfyui-DiffusersUtils already installed."
 fi
 
+if [ ! -d "ComfyUI_UltimateSDUpscale" ]; then
+    echo "  Cloning ComfyUI_UltimateSDUpscale (tiled upscaling)..."
+    git clone https://github.com/ssitu/ComfyUI_UltimateSDUpscale.git
+else
+    echo "  ComfyUI_UltimateSDUpscale already installed."
+fi
+
 if [ ! -d "ComfyUI-KJNodes" ]; then
     echo "  Cloning ComfyUI-KJNodes (outpainting support)..."
     git clone https://github.com/kijai/ComfyUI-KJNodes.git
