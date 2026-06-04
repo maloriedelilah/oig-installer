@@ -95,6 +95,15 @@ else
     echo "  ComfyUI-KJNodes already installed."
 fi
 
+if [ ! -d "RES4LYF" ]; then
+    echo "  Cloning RES4LYF (advanced schedulers for Qwen-Image)..."
+    git clone https://github.com/ClownsharkBatwing/RES4LYF.git
+else
+    echo "  RES4LYF already installed."
+fi
+# RES4LYF has undeclared dependencies
+pip install --quiet PyWavelets matplotlib 2>/dev/null || true
+
 if [ ! -d "ComfyUI-LTXVideo" ]; then
     echo "  Cloning ComfyUI-LTXVideo (video generation support)..."
     git clone https://github.com/Lightricks/ComfyUI-LTXVideo.git

@@ -85,10 +85,11 @@ if ($nvsmi) {
 
     if ($computeCap) {
         $major = [int]($computeCap.Split('.')[0])
+        $minor = [int]($computeCap.Split('.')[1])
         $archOk = $major -ge 8
         $archName = switch ($major) {
             7 { "Turing (RTX 20-series)" }
-            8 { "Ampere (RTX 30-series)" }
+            8 { if ($minor -ge 9) { "Ada Lovelace (RTX 40-series)" } else { "Ampere (RTX 30-series)" } }
             9 { "Ada Lovelace (RTX 40-series)" }
             10 { "Blackwell (RTX 50-series)" }
             default { "Compute $computeCap" }
@@ -123,10 +124,61 @@ if ($nvsmi) {
 
 if (-not $gpuFound) {
     $allPass = $false
-    $noNvidia = Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name
+    $allGpus = Get-CimInstance Win32_VideoController
     Write-Host "GPU: No NVIDIA GPU detected " -NoNewline -ForegroundColor White
     Write-Host "[FAIL]" -ForegroundColor Red
-    Write-Host "  Found: $($noNvidia -join ', ')" -ForegroundColor Gray
+    Write-Host ""
+    $nonNvidiaNames = ($allGpus | Select-Object -ExpandProperty Name) -join ', '
+    # Get accurate VRAM via DirectX diagnostics
+    $dxDiag = @{}
+    try {
+        & dxdiag /t $env:TEMP\dxdiag.txt 2>$null
+        Start-Sleep -Seconds 5
+        $dxLines = Get-Content "$env:TEMP\dxdiag.txt" -ErrorAction SilentlyContinue
+        if ($dxLines) {
+            $currentCard = $null
+            foreach ($line in $dxLines) {
+                if ($line -match "Card name:\s*(.+)") {
+                    $currentCard = $Matches[1].Trim()
+                }
+                if ($currentCard -and $line -match "Dedicated Memory:\s*(\d+)\s*MB") {
+                    $dxDiag[$currentCard] = [int]$Matches[1]
+                    $currentCard = $null
+                }
+            }
+        }
+        Remove-Item "$env:TEMP\dxdiag.txt" -ErrorAction SilentlyContinue
+    } catch {}
+
+    Write-Host ""
+    Write-Host "  GPUs found on this system:" -ForegroundColor Gray
+    foreach ($g in $allGpus) {
+        # Look up accurate VRAM from DirectX diagnostics
+        $dxVram = $dxDiag[$g.Name]
+        if (-not $dxVram) {
+            # Fuzzy match if exact name doesn't match
+            foreach ($key in $dxDiag.Keys) {
+                if ($key -like "*$($g.Name)*" -or $g.Name -like "*$key*") {
+                    $dxVram = $dxDiag[$key]; break
+                }
+            }
+        }
+        $vramStr = if ($dxVram) { "$([math]::Round($dxVram / 1024, 1)) GB" } else { "unknown" }
+        Write-Host "    - $($g.Name) (VRAM: $vramStr)" -ForegroundColor Gray
+        if ($g.Name -match 'AMD|Radeon') {
+            Write-Host "      AMD GPUs are not currently supported. OIG requires an NVIDIA GPU." -ForegroundColor Yellow
+        } elseif ($g.Name -match 'Intel|Arc|Iris|UHD') {
+            Write-Host "      Intel GPUs are not currently supported. OIG requires an NVIDIA GPU." -ForegroundColor Yellow
+            if ($g.Name -match 'Arc') {
+                Write-Host "      Intel Arc support may be added in a future update." -ForegroundColor Yellow
+            }
+        } elseif ($g.Name -match 'Microsoft Basic|Standard VGA') {
+            Write-Host "      This is a basic display driver, not a GPU." -ForegroundColor Yellow
+        }
+    }
+    Write-Host ""
+    Write-Host "  OIG requires an NVIDIA RTX 30-series (Ampere) or newer GPU." -ForegroundColor Yellow
+    Write-Host "  Recommended: RTX 3060 12GB, RTX 4060 8GB, RTX 5060 8GB, or better." -ForegroundColor Yellow
 } elseif (-not $gpuOk) {
     $allPass = $false
 }
@@ -142,9 +194,9 @@ $items = @(
     @{ Name = "CPU"; Value = $cpu; Ok = $true; Note = "" },
     @{ Name = "RAM"; Value = "${ramGB} GB"; Ok = $ramOk; Note = if ($ramOk) { "" } else { "(minimum 32GB)" } },
     @{ Name = "Disk"; Value = "${bestFreeGB} GB free on $($bestDrive.DeviceID)"; Ok = $diskOk; Note = if ($diskOk) { "" } else { "(minimum 50GB free)" } },
-    @{ Name = "GPU"; Value = if ($gpuFound) { "$gpuName" } else { "Not found" }; Ok = $gpuFound -and $gpuOk; Note = "" },
-    @{ Name = "VRAM"; Value = if ($gpuFound) { "${vramGB} GB" } else { "N/A" }; Ok = $vramOk; Note = if ($vramOk) { "" } else { "(minimum 8GB)" } },
-    @{ Name = "Arch"; Value = if ($gpuFound) { "$archName" } else { "N/A" }; Ok = $archOk; Note = if ($archOk) { "" } else { "(need RTX 30-series+)" } }
+    @{ Name = "GPU"; Value = if ($gpuFound) { "$gpuName" } else { "$nonNvidiaNames (no NVIDIA GPU)" }; Ok = $gpuFound -and $gpuOk; Note = "" },
+    @{ Name = "VRAM"; Value = if ($gpuFound) { "${vramGB} GB" } else { "N/A - requires NVIDIA GPU" }; Ok = $vramOk; Note = if ($vramOk) { "" } else { "(minimum 8GB)" } },
+    @{ Name = "Arch"; Value = if ($gpuFound) { "$archName" } else { "N/A - requires NVIDIA GPU" }; Ok = $archOk; Note = if ($archOk) { "" } else { "(need RTX 30-series+)" } }
 )
 
 foreach ($item in $items) {
