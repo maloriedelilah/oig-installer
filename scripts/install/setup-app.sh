@@ -543,8 +543,8 @@ SEOF
         # Install cloudflared
         if ! command -v cloudflared &>/dev/null; then
             echo "Installing cloudflared..."
-            curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared
-            chmod +x /usr/local/bin/cloudflared
+            sudo curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared
+            sudo chmod +x /usr/local/bin/cloudflared
         else
             echo "cloudflared already installed."
         fi
@@ -566,6 +566,13 @@ SEOF
             echo ""
             echo "Creating tunnel '$TUNNEL_NAME'..."
             cloudflared tunnel create "$TUNNEL_NAME"
+
+            # If running as non-root, copy creds to /root so the systemd
+            # service (which runs as root) can find them.
+            if [ "$(id -u)" -ne 0 ] && [ -d "$HOME/.cloudflared" ]; then
+                echo "Copying tunnel credentials to /root/.cloudflared..."
+                sudo cp -r "$HOME/.cloudflared" /root/.cloudflared
+            fi
         fi
 
         # Set up DNS route
