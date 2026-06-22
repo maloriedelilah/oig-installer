@@ -157,6 +157,16 @@ if [ -f "$APP_DIR/.env" ] && [ -f "$APP_DIR/.oig-version" ]; then
     else
         export HF_TOKEN=""
     fi
+
+    # Component flags — which GPU services this box manages locally.
+    # Defaults to true for installs predating this file.
+    if [ -f "$APP_DIR/components.conf" ]; then
+        source "$APP_DIR/components.conf"
+    fi
+    export MANAGE_COMFYUI="${MANAGE_COMFYUI:-true}"
+    export MANAGE_OLLAMA="${MANAGE_OLLAMA:-true}"
+    [ "$MANAGE_COMFYUI" = "true" ] && echo -e "ComfyUI: ${BOLD}managed locally${NC}" || echo -e "ComfyUI: ${BOLD}external (using COMFYUI_URL)${NC}"
+    [ "$MANAGE_OLLAMA" = "true" ] && echo -e "Ollama:  ${BOLD}managed locally${NC}" || echo -e "Ollama:  ${BOLD}external (using LMSTUDIO_URL)${NC}"
 else
     # ── Fresh install — prompt for config ────────────────────────────
     echo ""
@@ -196,6 +206,19 @@ else
     else
         echo -e "Klein 9B: ${YELLOW}skipped${NC} (you can add it later)"
     fi
+
+    # ── Bundled GPU services — install locally or use external instances ──
+    echo ""
+    echo "This machine can run ComfyUI and the LLM (Ollama) locally, or you can"
+    echo "point OIG at instances on another machine (set the URLs in .env)."
+    echo ""
+    read -p "Install & manage ComfyUI on this machine? [Y/n]: " COMFY_CHOICE
+    case "${COMFY_CHOICE:-Y}" in [Nn]*) export MANAGE_COMFYUI="false" ;; *) export MANAGE_COMFYUI="true" ;; esac
+    read -p "Install & manage Ollama (LLM) on this machine? [Y/n]: " OLLAMA_CHOICE
+    case "${OLLAMA_CHOICE:-Y}" in [Nn]*) export MANAGE_OLLAMA="false" ;; *) export MANAGE_OLLAMA="true" ;; esac
+
+    [ "$MANAGE_COMFYUI" = "false" ] && echo -e "ComfyUI: ${YELLOW}external${NC} — remember to set COMFYUI_URL in $APP_DIR/.env"
+    [ "$MANAGE_OLLAMA" = "false" ] && echo -e "Ollama:  ${YELLOW}external${NC} — remember to set LMSTUDIO_URL in $APP_DIR/.env"
 fi
 
 # Save HF token for future upgrades (if provided)
@@ -207,8 +230,13 @@ fi
 # ═══════════════════════════════════════════════════════════════════
 # Step 1: GPU Check
 # ═══════════════════════════════════════════════════════════════════
-step 1 "Checking GPU"
-source "$INSTALL_SCRIPTS/check-gpu.sh"
+if [ "$MANAGE_COMFYUI" = "true" ] || [ "$MANAGE_OLLAMA" = "true" ]; then
+    step 1 "Checking GPU"
+    source "$INSTALL_SCRIPTS/check-gpu.sh"
+else
+    step 1 "GPU check (skipped — ComfyUI and Ollama are external)"
+    echo "No local GPU services — skipping GPU check."
+fi
 
 # ═══════════════════════════════════════════════════════════════════
 # Step 2: Docker
@@ -219,20 +247,39 @@ source "$INSTALL_SCRIPTS/install-docker.sh"
 # ═══════════════════════════════════════════════════════════════════
 # Step 3: Ollama
 # ═══════════════════════════════════════════════════════════════════
-step 3 "Installing Ollama + LLM"
-source "$INSTALL_SCRIPTS/install-ollama.sh"
+if [ "$MANAGE_OLLAMA" = "true" ]; then
+    step 3 "Installing Ollama + LLM"
+    source "$INSTALL_SCRIPTS/install-ollama.sh"
+else
+    step 3 "Ollama (skipped — using external instance)"
+    echo "Skipping Ollama install. OIG will use LMSTUDIO_URL from .env."
+fi
 
 # ═══════════════════════════════════════════════════════════════════
 # Step 4: ComfyUI
 # ═══════════════════════════════════════════════════════════════════
-step 4 "Installing ComfyUI + Models"
-source "$INSTALL_SCRIPTS/install-comfyui.sh"
+if [ "$MANAGE_COMFYUI" = "true" ]; then
+    step 4 "Installing ComfyUI + Models"
+    source "$INSTALL_SCRIPTS/install-comfyui.sh"
+else
+    step 4 "ComfyUI (skipped — using external instance)"
+    echo "Skipping ComfyUI install. OIG will use COMFYUI_URL from .env."
+fi
 
 # ═══════════════════════════════════════════════════════════════════
 # Step 5: App Setup
 # ═══════════════════════════════════════════════════════════════════
 step 5 "Setting up Open Image Generator"
 source "$INSTALL_SCRIPTS/setup-app.sh"
+
+# Persist component choices so future upgrades respect them
+cat <<EOF | sudo tee "$APP_DIR/components.conf" >/dev/null
+# Which bundled GPU services this box installs and manages locally.
+# Set to false to use an instance on another machine, then point the matching
+# URL in .env at it (COMFYUI_URL / LMSTUDIO_URL).
+MANAGE_COMFYUI=${MANAGE_COMFYUI}
+MANAGE_OLLAMA=${MANAGE_OLLAMA}
+EOF
 
 # ═══════════════════════════════════════════════════════════════════
 # Done!
@@ -270,8 +317,16 @@ else
         echo "    Cloudflared  → $SVCMGR (tunnel)"
     fi
 fi
-echo "    ComfyUI      → $SVCMGR (port 8188)"
-echo "    Ollama       → $SVCMGR (port 11434)"
+if [ "$MANAGE_COMFYUI" = "true" ]; then
+    echo "    ComfyUI      → $SVCMGR (port 8188)"
+else
+    echo "    ComfyUI      → external (COMFYUI_URL)"
+fi
+if [ "$MANAGE_OLLAMA" = "true" ]; then
+    echo "    Ollama       → $SVCMGR (port 11434)"
+else
+    echo "    Ollama       → external (LMSTUDIO_URL)"
+fi
 echo ""
 echo "  Useful commands:"
 echo "    cd $APP_DIR"
