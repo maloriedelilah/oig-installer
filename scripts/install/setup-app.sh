@@ -549,31 +549,56 @@ SEOF
             echo "cloudflared already installed."
         fi
 
-        # Check if tunnel credentials already exist (re-run scenario)
+        # cloudflared writes cert.pem + <UUID>.json into the *invoking user's*
+        # ~/.cloudflared. The service runs as root, so the creds must also live
+        # in /root/.cloudflared. We detect creds in the user's home (readable
+        # without sudo), only log in / create when truly missing, sync to /root,
+        # then pin the creds file in the unit so it never depends on home-dir
+        # resolution. This is what makes re-runs and non-root installs idempotent.
         TUNNEL_NAME="oig-$(hostname | cut -c1-8)"
-        TUNNEL_CRED_DIR="/root/.cloudflared"
+        USER_CFD="$HOME/.cloudflared"
+        ROOT_CFD="/root/.cloudflared"
 
-        if [ -d "$TUNNEL_CRED_DIR" ] && ls "$TUNNEL_CRED_DIR"/*.json &>/dev/null 2>&1; then
+        user_has_creds() { ls "$USER_CFD"/*.json &>/dev/null 2>&1; }
+        root_has_creds() { sudo ls "$ROOT_CFD"/*.json &>/dev/null 2>&1; }
+
+        if user_has_creds || root_has_creds; then
             echo "Existing tunnel credentials found — reusing."
         else
-            echo ""
-            echo "You need to authenticate cloudflared with your Cloudflare account."
-            echo "This will open a URL — copy and paste it into your browser to authorize."
-            echo ""
-            read -p "Press Enter to start authentication..." _
-            cloudflared tunnel login
+            # Authenticate once — skip if a cert already exists anywhere.
+            if [ ! -f "$USER_CFD/cert.pem" ] && ! sudo test -f "$ROOT_CFD/cert.pem"; then
+                echo ""
+                echo "You need to authenticate cloudflared with your Cloudflare account."
+                echo "This will open a URL — copy and paste it into your browser to authorize."
+                echo ""
+                read -p "Press Enter to start authentication..." _
+                cloudflared tunnel login
+            else
+                echo "Existing cert.pem found — skipping login."
+            fi
 
-            echo ""
-            echo "Creating tunnel '$TUNNEL_NAME'..."
-            cloudflared tunnel create "$TUNNEL_NAME"
-
-            # If running as non-root, copy creds to /root so the systemd
-            # service (which runs as root) can find them.
-            if [ "$(id -u)" -ne 0 ] && [ -d "$HOME/.cloudflared" ]; then
-                echo "Copying tunnel credentials to /root/.cloudflared..."
-                sudo cp -r "$HOME/.cloudflared" /root/.cloudflared
+            # Create the tunnel only if it doesn't already exist.
+            if cloudflared tunnel list 2>/dev/null | awk '{print $2}' | grep -qx "$TUNNEL_NAME"; then
+                echo "Tunnel '$TUNNEL_NAME' already exists — skipping create."
+            else
+                echo "Creating tunnel '$TUNNEL_NAME'..."
+                cloudflared tunnel create "$TUNNEL_NAME"
             fi
         fi
+
+        # Sync creds + cert to /root so the root-run service can read them
+        # (no-op when already running as root).
+        if [ "$(id -u)" -ne 0 ] && [ -d "$USER_CFD" ]; then
+            echo "Syncing tunnel credentials to $ROOT_CFD..."
+            sudo mkdir -p "$ROOT_CFD"
+            sudo cp -a "$USER_CFD"/. "$ROOT_CFD"/
+        fi
+
+        # Pin the credentials file and run by UUID so the service never relies
+        # on home-dir resolution. Newest json = the tunnel we just set up.
+        CRED_FILE=$(sudo ls -t "$ROOT_CFD"/*.json 2>/dev/null | head -1)
+        TUNNEL_REF=$(basename "$CRED_FILE" .json 2>/dev/null)
+        [ -z "$TUNNEL_REF" ] && TUNNEL_REF="$TUNNEL_NAME"
 
         # Set up DNS route
         DOMAIN=$(grep "^APP_URL=" "$APP_DIR/.env" | sed 's|APP_URL=https://||')
@@ -590,7 +615,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/cloudflared tunnel run --url http://localhost:80 $TUNNEL_NAME
+ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --credentials-file $CRED_FILE run --url http://localhost:80 $TUNNEL_REF
 Restart=on-failure
 RestartSec=5
 
@@ -599,12 +624,12 @@ WantedBy=multi-user.target
 TEOF
             sudo systemctl daemon-reload
             sudo systemctl enable cloudflared
-            sudo systemctl start cloudflared
+            sudo systemctl restart cloudflared
         else
             mkdir -p /etc/supervisor/conf.d
             cat > /etc/supervisor/conf.d/cloudflared.conf <<TEOF
 [program:cloudflared]
-command=/usr/local/bin/cloudflared tunnel run --url http://localhost:80 $TUNNEL_NAME
+command=/usr/local/bin/cloudflared tunnel --no-autoupdate --credentials-file $CRED_FILE run --url http://localhost:80 $TUNNEL_REF
 user=root
 autostart=true
 autorestart=true
